@@ -34,6 +34,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => { if (!isFirebaseConfigured) void loadLocalData(emptyData).then((stored) => { setData(stored); setReady(true) }) }, [])
   useEffect(() => { if (!isFirebaseConfigured && ready) void saveLocalData(data) }, [data, ready])
   useEffect(() => {
+    const flushBeforeUpdate = () => {
+      if (!isFirebaseConfigured) { void saveLocalData(data); return }
+      const database = db
+      if (database && signedIn) data.notes.forEach((page) => void saveNoteDocument(database, page, profile.id))
+    }
+    window.addEventListener('tlog:before-update', flushBeforeUpdate)
+    return () => window.removeEventListener('tlog:before-update', flushBeforeUpdate)
+  }, [data, profile.id, signedIn])
+  useEffect(() => {
     const firebaseAuth = auth; const database = db
     if (!firebaseAuth || !database) return
     let unsubscribeData: (() => void) | undefined

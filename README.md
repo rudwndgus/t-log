@@ -36,6 +36,7 @@ Supabase, Mapbox, Google Maps 임베드 및 유료 지도 API는 사용하지 �
 - Google Maps 짧은 링크를 읽지 못할 때 검색·확장 URL·직접 핀 안내
 - Firebase 설정이 없을 때 IndexedDB 로컬 모드
 - iPhone safe area와 홈 화면 설치를 지원하는 PWA
+- 새 배포 감지 시 사용자 확인 후 저장·서비스 워커 교체·자동 새로고침
 
 ## 로컬 실행
 
@@ -143,6 +144,8 @@ MapLibre는 OpenFreeMap의 Positron 스타일을 직접 렌더링합니다. 지�
 3. 홈 화면의 T Log 아이콘으로 실행합니다.
 
 standalone 모드, `100dvh`, safe-area inset, 16px 이상의 입력 글꼴을 적용했습니다.
+
+새 버전이 GitHub Pages에 배포되면 앱이 시작될 때, 다시 화면으로 돌아올 때, 그리고 실행 중 15분 간격으로 서비스 워커 업데이트를 확인합니다. 업데이트가 있으면 **새 버전이 준비됐어요** 안내가 표시되며, **확인**을 누르면 현재 데이터를 저장하고 새 서비스 워커로 교체한 뒤 자동으로 최신 화면을 불러옵니다.
 
 ## 품질 확인
 
