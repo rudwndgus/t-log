@@ -1,0 +1,15 @@
+node_modules
+dist
+.env
+.env.local
+*.local
+*.log
+.DS_Store
+.vite
+coverage
+test-results
+playwright-report
+home.png
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
