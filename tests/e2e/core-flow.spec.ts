@@ -4,6 +4,7 @@ test('creates a trip and connects note, map, and chat flows', async ({ page }) =
   await page.goto('/')
   await page.evaluate(() => localStorage.clear())
   await page.reload()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
   await page.getByRole('link', { name: '새 여행', exact: true }).last().click()
   await page.getByLabel('여행 이름').fill('몬트리올 가을여행')
