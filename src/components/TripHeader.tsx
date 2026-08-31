@@ -17,7 +17,7 @@ export function TripHeader({ trip }: { trip: Trip }) {
     <header className="trip-header"><Link className="icon-button" to="/" aria-label="여행 목록"><ChevronLeft size={24} /></Link><div className="trip-header__title"><strong>{trip.name}</strong><span>{formatTripDates(trip.startDate, trip.endDate)}</span></div><button className="member-button" onClick={() => setMembersOpen(true)}><Users size={19} /><span>{trip.members.length}</span></button></header>
     <Sheet open={membersOpen} title="멤버" onClose={() => setMembersOpen(false)}>
       <div className="member-list">{trip.members.map((member) => <div className="member-row" key={member.id}><span className="avatar">{initials(member.profile.name)}</span><div><strong>{member.profile.name}</strong><small>{member.role === 'OWNER' ? '방장' : '멤버'}</small></div></div>)}</div>
-      <div className="invite-panel"><span>초대 코드</span><strong>{trip.inviteCode}</strong><p>{cloudMode ? '링크를 받은 친구가 바로 참여할 수 있어요.' : 'Supabase를 연결하면 다른 기기에서도 초대가 작동해요.'}</p><div className="button-row"><Button variant="secondary" onClick={copyInvite}>{copied ? '복사됨' : '복사'}</Button><Button onClick={share}>공유</Button></div></div>
+      <div className="invite-panel"><span>초대 코드</span><strong>{trip.inviteCode}</strong><p>{cloudMode ? '링크를 받은 친구가 바로 참여할 수 있어요.' : 'Firebase를 연결하면 다른 기기에서도 초대가 작동해요.'}</p><div className="button-row"><Button variant="secondary" onClick={copyInvite}>{copied ? '복사됨' : '복사'}</Button><Button onClick={share}>공유</Button></div></div>
     </Sheet>
   </>
 }

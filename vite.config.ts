@@ -8,8 +8,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          mapbox: ['mapbox-gl'],
-          supabase: ['@supabase/supabase-js'],
+          map: ['maplibre-gl'],
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
           react: ['react', 'react-dom', 'react-router-dom']
         }
       }

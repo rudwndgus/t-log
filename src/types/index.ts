@@ -32,6 +32,8 @@ export interface ItineraryPlace {
   endTime?: string
   notes?: string
   link?: string
+  googleMapsUrl?: string
+  source?: 'search' | 'google_maps' | 'manual_pin' | 'note' | 'proposal'
   providerPlaceId?: string
   sortOrder: number
   category?: string
