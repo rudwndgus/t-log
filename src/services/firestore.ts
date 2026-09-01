@@ -42,10 +42,18 @@ export async function createTripDocument(database: Firestore, trip: Trip, profil
 }
 export async function joinTripByCode(database: Firestore, code: string, profile: Profile) {
   const invite = await getDoc(doc(database, 'inviteCodes', code.toUpperCase())); if (!invite.exists()) throw new Error('INVALID_INVITE')
-  const tripId = String(invite.data().tripId); const tripRef = doc(database, 'trips', tripId); const batch = writeBatch(database)
+  const tripId = String(invite.data().tripId); const tripRef = doc(database, 'trips', tripId)
+  const tripSnapshot = await getDoc(tripRef); if (!tripSnapshot.exists()) throw new Error('INVALID_INVITE')
+  const row = tripSnapshot.data(); const batch = writeBatch(database)
   batch.update(tripRef, { memberIds: arrayUnion(profile.id), updatedAt: serverTimestamp() })
   batch.set(doc(tripRef, 'members', profile.id), { userId: profile.id, role: 'member', displayName: profile.name, email: profile.email || null, joinedAt: serverTimestamp() })
-  await batch.commit(); return tripId
+  await batch.commit()
+  return {
+    id: tripId, name: String(row.name), destination: String(row.destination), startDate: String(row.startDate),
+    endDate: String(row.endDate), emoji: String(row.emoji || '✈️'), inviteCode: String(row.inviteCode),
+    members: [{ id: profile.id, profile, role: 'MEMBER' as const }], createdBy: String(row.ownerId),
+    createdAt: asIso(row.createdAt), publicShareId: row.publicShareId ? String(row.publicShareId) : undefined
+  }
 }
 export const saveNoteDocument = (database: Firestore, page: NotePage, createdBy: string) => setDoc(doc(database, 'trips', page.tripId, 'notes', page.id), { title: page.title, blocks: page.blocks, createdBy, updatedAt: serverTimestamp() }, { merge: true })
 export const deleteNoteDocument = (database: Firestore, tripId: string, pageId: string) => deleteDoc(doc(database, 'trips', tripId, 'notes', pageId))
