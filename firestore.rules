@@ -68,6 +68,13 @@ service cloud.firestore {
       match /notes/{noteId} {
         allow read, create, update, delete: if member(tripId);
       }
+      match /attachments/{attachmentId} {
+        allow read, create, update, delete: if member(tripId);
+
+        match /chunks/{chunkId} {
+          allow read, create, update, delete: if member(tripId);
+        }
+      }
       match /places/{placeId} {
         allow read, create, update, delete: if member(tripId);
       }

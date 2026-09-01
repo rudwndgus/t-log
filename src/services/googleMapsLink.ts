@@ -1,5 +1,6 @@
 export interface ParsedGoogleMapsPlace { latitude: number; longitude: number; name: string; googleMapsUrl: string; source: 'google_maps' }
-export type GoogleMapsParseResult = { ok: true; place: ParsedGoogleMapsPlace } | { ok: false; reason: 'invalid' | 'short_link' | 'coordinates_missing' }
+export type GoogleMapsParseFailure = 'invalid' | 'short_link' | 'coordinates_missing' | 'resolver_not_configured' | 'resolve_failed'
+export type GoogleMapsParseResult = { ok: true; place: ParsedGoogleMapsPlace } | { ok: false; reason: GoogleMapsParseFailure }
 export type GoogleMapsUrlResolver = (url: string) => Promise<string | null>
 
 const coordinatePatterns = [/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/, /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/, /[?&](?:q|query|ll)=(-?\d{1,3}(?:\.\d+)?)(?:%2C|,)(-?\d{1,3}(?:\.\d+)?)/i]
@@ -27,20 +28,23 @@ export function parseGoogleMapsUrl(input: string): GoogleMapsParseResult {
 }
 
 export async function resolveGoogleMapsShortUrl(url: string): Promise<string | null> {
-  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 6_000)
+  const endpoint = String(import.meta.env.VITE_GOOGLE_MAPS_RESOLVER_URL || '').trim()
+  if (!endpoint) throw new Error('RESOLVER_NOT_CONFIGURED')
+  const requestUrl = new URL(endpoint); requestUrl.searchParams.set('url', url)
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 8_000)
   try {
-    const response = await fetch(url, { method: 'GET', redirect: 'follow', cache: 'no-store', signal: controller.signal })
-    return response.url && response.url !== url ? response.url : null
-  } catch {
-    // Google does not currently allow this redirect request from every browser.
-    // Keep this function injectable so a small resolver endpoint can be added later.
-    return null
+    const response = await fetch(requestUrl, { method: 'GET', cache: 'no-store', signal: controller.signal })
+    const payload = await response.json() as { success?: boolean; expandedUrl?: unknown }
+    if (!response.ok || payload.success !== true || typeof payload.expandedUrl !== 'string') throw new Error('RESOLVE_FAILED')
+    return payload.expandedUrl
   } finally { clearTimeout(timeout) }
 }
 
 export async function parseOrResolveGoogleMapsUrl(input: string, resolver: GoogleMapsUrlResolver = resolveGoogleMapsShortUrl): Promise<GoogleMapsParseResult> {
   const direct = parseGoogleMapsUrl(input); if (direct.ok || direct.reason !== 'short_link') return direct
-  const expanded = await resolver(input.trim()); if (!expanded) return direct
-  const resolved = parseGoogleMapsUrl(expanded)
-  return resolved.ok ? { ok: true, place: { ...resolved.place, googleMapsUrl: input.trim() } } : resolved
+  try {
+    const expanded = await resolver(input.trim()); if (!expanded) return { ok: false, reason: 'resolve_failed' }
+    const resolved = parseGoogleMapsUrl(expanded)
+    return resolved.ok ? { ok: true, place: { ...resolved.place, googleMapsUrl: input.trim() } } : resolved
+  } catch (error) { return { ok: false, reason: error instanceof Error && error.message === 'RESOLVER_NOT_CONFIGURED' ? 'resolver_not_configured' : 'resolve_failed' } }
 }

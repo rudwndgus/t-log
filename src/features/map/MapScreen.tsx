@@ -39,7 +39,7 @@ function AddPlaceSheet({ open, initialQuery, draftPin, onClose, onStartPin, onAd
     event.preventDefault(); setLoading(true); setError('')
     try {
       const result = await parseOrResolveGoogleMapsUrl(linkText)
-      if (!result.ok) { setError(result.reason === 'short_link' ? 'Google Maps 공유 링크는 확인했지만 브라우저에서 위치 정보를 직접 읽을 수 없어요. 장소 검색 또는 지도에 직접 핀을 이용해 주세요.' : result.reason === 'coordinates_missing' ? '링크에서 좌표를 찾지 못했어요. @위도,경도가 포함된 펼쳐진 URL인지 확인해 주세요.' : 'Google Maps 링크 형식을 확인해 주세요.'); return }
+      if (!result.ok) { setError(result.reason === 'resolver_not_configured' ? 'Google Maps 단축 링크 확인 서버가 아직 설정되지 않았어요.' : result.reason === 'resolve_failed' || result.reason === 'short_link' ? 'Google Maps 단축 링크를 펼치지 못했어요. 잠시 후 다시 시도해 주세요.' : result.reason === 'coordinates_missing' ? '링크에서 좌표를 찾지 못했어요. 좌표가 포함된 Google Maps 링크인지 확인해 주세요.' : 'Google Maps 링크 형식을 확인해 주세요.'); return }
       const place: ParsedGoogleMapsPlace = result.place
       let address: string | null = null
       try { address = await reverseGeocode(place.latitude, place.longitude) } catch { /* Coordinates remain usable when Nominatim is unavailable. */ }

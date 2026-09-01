@@ -2,7 +2,7 @@ export type TripRole = 'OWNER' | 'MEMBER'
 export type ProposalStatus = 'OPEN' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 export type MessageType = 'TEXT' | 'NOTE_SHARE' | 'PLACE_SHARE' | 'PROPOSAL' | 'POLL' | 'DECISION' | 'SYSTEM'
 export type TransportMode = 'walk' | 'driving' | 'transit' | 'cycling' | 'ferry' | 'shuttle' | 'other'
-export type BlockType = 'paragraph' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'toggle' | 'quote' | 'divider' | 'link' | 'location'
+export type BlockType = 'paragraph' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'toggle' | 'quote' | 'divider' | 'link' | 'location' | 'image' | 'file' | 'embed'
 
 export interface Profile { id: string; name: string; email?: string }
 export interface TripMember { id: string; profile: Profile; role: TripRole }
@@ -19,8 +19,25 @@ export interface Trip {
   createdAt: string
   publicShareId?: string
 }
-export interface NoteBlock { id: string; type: BlockType; content: string; checked?: boolean; children?: NoteBlock[]; collapsed?: boolean }
+export interface NoteBlock { id: string; type: BlockType; content: string; checked?: boolean; children?: NoteBlock[]; collapsed?: boolean; attachmentId?: string; attachmentKind?: 'image' | 'pdf' | 'file'; embedUrl?: string }
 export interface NotePage { id: string; tripId: string; title: string; blocks: NoteBlock[]; updatedAt: string }
+export interface NoteAttachment {
+  id: string
+  tripId: string
+  notePageId: string
+  blockId: string
+  kind: 'image' | 'pdf' | 'file'
+  fileName: string
+  mimeType: string
+  size: number
+  storedSize: number
+  chunkCount: number
+  width?: number
+  height?: number
+  status: 'uploading' | 'ready'
+  createdBy: string
+  createdAt: string
+}
 export interface ItineraryPlace {
   id: string
   tripId: string
