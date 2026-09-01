@@ -13,7 +13,7 @@ export function subscribeToUserData(database: Firestore, userId: string, onData:
     childUnsubscribers.push(onSnapshot(source, (snapshot) => { target.set(tripId, snapshot.docs.map((item) => mapRow(item.id, item.data()))); emit() }, (error) => onError(error, { tripId, collection: path })))
   }
   const tripQuery = query(collection(database, 'trips'), where('memberIds', 'array-contains', userId))
-  const unsubscribeTrips = onSnapshot(tripQuery, (snapshot) => {
+  const unsubscribeTrips = onSnapshot(tripQuery, { includeMetadataChanges: true }, (snapshot) => {
     // A local latency-compensated trip snapshot can arrive before the create
     // batch is acknowledged. Starting child listeners at that point makes the
     // server evaluate membership against a parent that does not exist yet.

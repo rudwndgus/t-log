@@ -52,14 +52,14 @@ async function createTrip(page: Page, name: string) {
   await page.getByLabel('여행 이름').fill(name)
   await page.getByLabel('목적지').fill('Toronto')
   await page.getByRole('button', { name: '여행 만들기' }).click()
-  await expect(page).toHaveURL(/#\/trip\/[^/]+\/note$/)
+  await expect(page).toHaveURL(/#\/trip\/[^/]+\/note$/, { timeout: 30_000 })
   return page.url().match(/#\/trip\/([^/]+)/)?.[1] || ''
 }
 
 async function readInviteCode(page: Page) {
   await page.locator('.member-button').click()
   const code = (await page.locator('.invite-panel strong').innerText()).trim()
-  await page.getByRole('dialog', { name: '멤버' }).getByRole('button', { name: '닫기' }).click()
+  await page.getByRole('dialog', { name: '멤버' }).locator('.sheet-header').getByRole('button', { name: '닫기' }).click()
   return code
 }
 
@@ -128,7 +128,7 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     await pageA.goto(`${productionUrl}#/trip/${tripId}/note`)
     await pageA.locator('.member-button').click()
     await expect(pageA.getByText(accountB.name)).toBeVisible()
-    await pageA.getByRole('dialog', { name: '멤버' }).getByRole('button', { name: '닫기' }).click()
+    await pageA.getByRole('dialog', { name: '멤버' }).locator('.sheet-header').getByRole('button', { name: '닫기' }).click()
 
     await pageB.getByRole('button', { name: /첫 페이지 만들기/ }).click()
     await pageB.getByLabel('페이지 제목').fill(noteTitle)
