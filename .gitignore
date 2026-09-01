@@ -9,6 +9,7 @@ dist
 coverage
 test-results
 playwright-report
+playwright-report-production
 home.png
 *.tsbuildinfo
 vite.config.js
