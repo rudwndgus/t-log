@@ -12,8 +12,9 @@ export function MapCanvas({ places, focusedId, resetKey, pinMode = false, draftP
     if (!containerRef.current || mapRef.current) return
     const map = new Map({ container: containerRef.current, style: STYLE_URL, center: [-79.3832, 43.6532], zoom: 11, attributionControl: false })
     map.addControl(new NavigationControl({ showCompass: false }), 'top-right'); map.addControl(new AttributionControl({ compact: true }))
-    map.on('dragstart', () => { exploredRef.current = true }); map.on('error', (event) => { if (!event.error?.message?.includes('AbortError')) setFailed(true) }); mapRef.current = map
-    return () => { markersRef.current.forEach((marker) => marker.remove()); draftMarkerRef.current?.remove(); map.remove(); mapRef.current = null }
+    map.on('dragstart', () => { exploredRef.current = true }); map.on('load', () => { setFailed(false); if (containerRef.current) containerRef.current.dataset.mapLoaded = 'true' }); map.on('error', (event) => { if (!map.isStyleLoaded() && !event.error?.message?.includes('AbortError')) setFailed(true) }); mapRef.current = map
+    const resizeObserver = new ResizeObserver(() => map.resize()); resizeObserver.observe(containerRef.current)
+    return () => { resizeObserver.disconnect(); markersRef.current.forEach((marker) => marker.remove()); draftMarkerRef.current?.remove(); map.remove(); mapRef.current = null }
   }, [])
   useEffect(() => { exploredRef.current = false }, [resetKey])
   useEffect(() => {
@@ -21,7 +22,7 @@ export function MapCanvas({ places, focusedId, resetKey, pinMode = false, draftP
     const render = async () => {
       markersRef.current.forEach((marker) => marker.remove()); markersRef.current = []
       places.forEach((place, index) => { const element = document.createElement('button'); element.className = `map-marker ${place.id === focusedId ? 'is-focused' : ''}`; const label = document.createElement('span'); label.textContent = String(index + 1); element.appendChild(label); element.addEventListener('click', (event) => { event.stopPropagation(); onSelect(place) }); markersRef.current.push(new Marker({ element }).setLngLat([place.longitude, place.latitude]).addTo(map)) })
-      const route = await straightLineRouting.route(places); const source = map.getSource('route') as GeoJSONSource | undefined
+      const route = await straightLineRouting.route(places); if (containerRef.current) containerRef.current.dataset.routePointCount = String(route.geometry.coordinates.length); const source = map.getSource('route') as GeoJSONSource | undefined
       if (source) source.setData(route); else if (map.isStyleLoaded()) { map.addSource('route', { type: 'geojson', data: route }); map.addLayer({ id: 'route-halo', type: 'line', source: 'route', paint: { 'line-color': '#ffffff', 'line-width': 7, 'line-opacity': .9 } }); map.addLayer({ id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#176b55', 'line-width': 4, 'line-opacity': .85 } }) }
       if (places.length && !exploredRef.current) { const bounds = new LngLatBounds(); places.forEach((place) => bounds.extend([place.longitude, place.latitude])); map.fitBounds(bounds, { padding: 64, maxZoom: 14, duration: 500 }) }
     }

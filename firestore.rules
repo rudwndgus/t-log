@@ -25,7 +25,9 @@ service cloud.firestore {
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.memberIds == [request.auth.uid];
-      allow read: if member(tripId);
+      // This is queryable with `where('memberIds', 'array-contains', uid)`.
+      // Reading the same document through get() is not query-provable.
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
       allow update: if (
         member(tripId)
         && request.resource.data.ownerId == resource.data.ownerId

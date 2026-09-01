@@ -4,7 +4,7 @@ import type { ChatMessage, ItineraryPlace, NotePage, Profile, Proposal, TLogData
 const emptyData: TLogData = { trips: [], notes: [], places: [], segments: [], messages: [], proposals: [] }
 const asIso = (value: unknown) => value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function' ? value.toDate().toISOString() : typeof value === 'string' ? value : new Date().toISOString()
 
-export function subscribeToUserData(database: Firestore, userId: string, onData: (data: TLogData) => void, onError: () => void): Unsubscribe {
+export function subscribeToUserData(database: Firestore, userId: string, onData: (data: TLogData) => void, onError: (error: Error) => void): Unsubscribe {
   let childUnsubscribers: Unsubscribe[] = []
   let trips: Trip[] = []; const members = new Map<string, TripMember[]>(); const notes = new Map<string, NotePage[]>(); const places = new Map<string, ItineraryPlace[]>(); const segments = new Map<string, TransportSegment[]>(); const messages = new Map<string, ChatMessage[]>(); const proposals = new Map<string, Proposal[]>()
   const emit = () => onData({ trips: trips.map((trip) => ({ ...trip, members: members.get(trip.id) || trip.members })), notes: Array.from(notes.values()).flat(), places: Array.from(places.values()).flat(), segments: Array.from(segments.values()).flat(), messages: Array.from(messages.values()).flat(), proposals: Array.from(proposals.values()).flat() })

@@ -74,8 +74,7 @@ Firebase Console에서 추가로 설정합니다.
 
 ```bash
 npx firebase-tools login
-npx firebase-tools use YOUR_PROJECT_ID
-npx firebase-tools deploy --only firestore
+npx firebase-tools deploy --only firestore:rules
 ```
 
 [`firestore.rules`](firestore.rules)는 인증된 여행 멤버에게만 하위 데이터를 허용합니다. 여행 삭제·멤버 제거는 owner만 가능하고, 투표 문서는 로그인한 본인만 작성할 수 있습니다. `allow read, write: if true` 규칙은 사용하지 않습니다.
@@ -153,10 +152,13 @@ standalone 모드, `100dvh`, safe-area inset, 16px 이상의 입력 글꼴을 �
 npm run lint
 npm test
 npm run test:e2e
+npm run test:e2e:production
 npm run build
 ```
 
 E2E 테스트는 390×844에서 여행·노트 생성, Google Maps URL 장소 추가, 지도 직접 핀, LIST 전환, 채팅 전송을 확인합니다.
+
+Production E2E는 실제 `https://rudwndgus.github.io/t-log/`에서 고유한 Firebase 계정 2개를 만들고 Edge, Firefox, WebKit의 격리된 컨텍스트를 사용합니다. 여행의 새로고침 생존, 같은 계정의 다른 엔진 조회, 초대 참가, 실시간 노트·채팅·투표·장소, Firestore 핵심 문서 존재를 검증합니다. 실행 전 `npx playwright install firefox webkit`이 필요하며 테스트 계정과 방은 production Firestore에 증거 데이터로 남습니다.
 
 ## 프로젝트 구조
 
