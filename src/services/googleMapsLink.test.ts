@@ -29,5 +29,9 @@ describe('Google Maps URL parser', () => {
     expect(result).toEqual({ ok: false, reason: 'coordinates_missing', fallbackQuery: '빌리 비숍 공항 2 Eireann Quay, Toronto, ON M5V 1A1' })
     expect(googleMapsSearchFallbacks(result.ok ? '' : result.fallbackQuery || '')).toEqual({ name: '빌리 비숍 공항', queries: ['빌리 비숍 공항 2 Eireann Quay, Toronto, ON M5V 1A1', '2 Eireann Quay, Toronto, ON M5V 1A1', '빌리 비숍 공항'] })
   })
+  it('accepts coordinates supplied by the server-side mobile-link fallback', async () => {
+    const result = await parseOrResolveGoogleMapsUrl('https://maps.app.goo.gl/mobile', async () => ({ expandedUrl: 'https://www.google.com/maps?q=Airport', location: { latitude: 43.63396, longitude: -79.39713, name: 'Billy Bishop Airport' } }))
+    expect(result.ok && result.place).toMatchObject({ latitude: 43.63396, longitude: -79.39713, name: 'Billy Bishop Airport', googleMapsUrl: 'https://maps.app.goo.gl/mobile' })
+  })
   it('rejects non-Google URLs', () => expect(parseGoogleMapsUrl('https://example.com/@43.1,-79.1')).toEqual({ ok: false, reason: 'invalid' }))
 })

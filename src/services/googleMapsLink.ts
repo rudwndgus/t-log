@@ -1,7 +1,8 @@
 export interface ParsedGoogleMapsPlace { latitude: number; longitude: number; name: string; googleMapsUrl: string; source: 'google_maps' }
+export interface ResolvedGoogleMapsUrl { expandedUrl: string; location?: { latitude: number; longitude: number; name?: string } }
 export type GoogleMapsParseFailure = 'invalid' | 'short_link' | 'coordinates_missing' | 'resolver_not_configured' | 'resolve_failed'
 export type GoogleMapsParseResult = { ok: true; place: ParsedGoogleMapsPlace } | { ok: false; reason: GoogleMapsParseFailure; fallbackQuery?: string }
-export type GoogleMapsUrlResolver = (url: string) => Promise<string | null>
+export type GoogleMapsUrlResolver = (url: string) => Promise<string | ResolvedGoogleMapsUrl | null>
 
 const coordinatePatterns = [/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/, /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/, /[?&](?:q|query|ll)=(-?\d{1,3}(?:\.\d+)?)(?:%2C|,)(-?\d{1,3}(?:\.\d+)?)/i]
 const validCoordinates = (latitude: number, longitude: number) => Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
@@ -36,24 +37,26 @@ export function googleMapsSearchFallbacks(query: string) {
   return { name, queries: Array.from(new Set([normalized, address, name].filter((value) => value.length >= 2))) }
 }
 
-export async function resolveGoogleMapsShortUrl(url: string): Promise<string | null> {
+export async function resolveGoogleMapsShortUrl(url: string): Promise<ResolvedGoogleMapsUrl | null> {
   const endpoint = String(import.meta.env.VITE_GOOGLE_MAPS_RESOLVER_URL || '').trim()
   if (!endpoint) throw new Error('RESOLVER_NOT_CONFIGURED')
   const requestUrl = new URL(endpoint); requestUrl.searchParams.set('url', url)
-  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 8_000)
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 15_000)
   try {
     const response = await fetch(requestUrl, { method: 'GET', cache: 'no-store', signal: controller.signal })
-    const payload = await response.json() as { success?: boolean; expandedUrl?: unknown }
+    const payload = await response.json() as { success?: boolean; expandedUrl?: unknown; location?: { latitude?: unknown; longitude?: unknown; name?: unknown } }
     if (!response.ok || payload.success !== true || typeof payload.expandedUrl !== 'string') throw new Error('RESOLVE_FAILED')
-    return payload.expandedUrl
+    const latitude = Number(payload.location?.latitude); const longitude = Number(payload.location?.longitude)
+    return { expandedUrl: payload.expandedUrl, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? { location: { latitude, longitude, name: typeof payload.location?.name === 'string' ? payload.location.name : undefined } } : {}) }
   } finally { clearTimeout(timeout) }
 }
 
 export async function parseOrResolveGoogleMapsUrl(input: string, resolver: GoogleMapsUrlResolver = resolveGoogleMapsShortUrl): Promise<GoogleMapsParseResult> {
   const direct = parseGoogleMapsUrl(input); if (direct.ok || direct.reason !== 'short_link') return direct
   try {
-    const expanded = await resolver(input.trim()); if (!expanded) return { ok: false, reason: 'resolve_failed' }
-    const resolved = parseGoogleMapsUrl(expanded)
+    const resolution = await resolver(input.trim()); if (!resolution) return { ok: false, reason: 'resolve_failed' }
+    if (typeof resolution !== 'string' && resolution.location) return { ok: true, place: { latitude: resolution.location.latitude, longitude: resolution.location.longitude, name: resolution.location.name || 'Google Maps location', googleMapsUrl: input.trim(), source: 'google_maps' } }
+    const expanded = typeof resolution === 'string' ? resolution : resolution.expandedUrl; const resolved = parseGoogleMapsUrl(expanded)
     return resolved.ok ? { ok: true, place: { ...resolved.place, googleMapsUrl: input.trim() } } : resolved
   } catch (error) { return { ok: false, reason: error instanceof Error && error.message === 'RESOLVER_NOT_CONFIGURED' ? 'resolver_not_configured' : 'resolve_failed' } }
 }
