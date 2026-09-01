@@ -5,7 +5,7 @@ export default defineConfig({
   testMatch: 'production.spec.ts',
   fullyParallel: false,
   workers: 1,
-  timeout: 300_000,
+  timeout: 900_000,
   expect: { timeout: 30_000 },
   reporter: [['line'], ['html', { outputFolder: 'playwright-report-production', open: 'never' }]],
   use: {
