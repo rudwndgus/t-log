@@ -19,7 +19,7 @@
     "date-fns": "^4.1.0",
     "firebase": "^12.18.0",
     "lucide-react": "^0.544.0",
-    "maplibre-gl": "^6.6.0",
+    "maplibre-gl": "5.24.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.1"
