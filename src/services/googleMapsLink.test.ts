@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseGoogleMapsUrl, parseOrResolveGoogleMapsUrl } from './googleMapsLink'
+import { googleMapsSearchFallbacks, parseGoogleMapsUrl, parseOrResolveGoogleMapsUrl } from './googleMapsLink'
 
 describe('Google Maps URL parser', () => {
   it('extracts coordinates and a place name from an expanded URL', () => {
@@ -23,6 +23,11 @@ describe('Google Maps URL parser', () => {
   it('can resolve a short link through an injectable resolver', async () => {
     const result = await parseOrResolveGoogleMapsUrl('https://maps.app.goo.gl/abc123', async () => 'https://www.google.com/maps/place/CN+Tower/@43.6426,-79.3871,17z')
     expect(result.ok && result.place).toMatchObject({ name: 'CN Tower', googleMapsUrl: 'https://maps.app.goo.gl/abc123' })
+  })
+  it('preserves a text query when a mobile shared URL has no coordinates', async () => {
+    const result = await parseOrResolveGoogleMapsUrl('https://maps.app.goo.gl/mobile', async () => 'https://www.google.com/maps?q=%EB%B9%8C%EB%A6%AC+%EB%B9%84%EC%88%8D+%EA%B3%B5%ED%95%AD+2+Eireann+Quay,+Toronto,+ON+M5V+1A1&ftid=abc')
+    expect(result).toEqual({ ok: false, reason: 'coordinates_missing', fallbackQuery: '빌리 비숍 공항 2 Eireann Quay, Toronto, ON M5V 1A1' })
+    expect(googleMapsSearchFallbacks(result.ok ? '' : result.fallbackQuery || '')).toEqual({ name: '빌리 비숍 공항', queries: ['빌리 비숍 공항 2 Eireann Quay, Toronto, ON M5V 1A1', '2 Eireann Quay, Toronto, ON M5V 1A1', '빌리 비숍 공항'] })
   })
   it('rejects non-Google URLs', () => expect(parseGoogleMapsUrl('https://example.com/@43.1,-79.1')).toEqual({ ok: false, reason: 'invalid' }))
 })

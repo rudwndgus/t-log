@@ -4,13 +4,15 @@ const TIMEOUT_MS = 6_000
 
 const isAllowedOrigin = (origin: string) => origin === PRODUCTION_ORIGIN || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
 const isShortMapsUrl = (url: URL) => url.protocol === 'https:' && (url.hostname === 'maps.app.goo.gl' || (url.hostname === 'goo.gl' && url.pathname.startsWith('/maps/')))
-const isGoogleMapsUrl = (url: URL) => {
+const isGoogleHost = (url: URL) => {
   if (url.protocol !== 'https:') return false
-  if (!/^([a-z0-9-]+\.)*google\.(com|[a-z]{2,3}|com\.[a-z]{2}|co\.[a-z]{2})$/i.test(url.hostname)) return false
+  return /^([a-z0-9-]+\.)*google\.(com|[a-z]{2,3}|com\.[a-z]{2}|co\.[a-z]{2})$/i.test(url.hostname)
+}
+const isGoogleMapsUrl = (url: URL) => {
+  if (!isGoogleHost(url)) return false
   return url.hostname.startsWith('maps.') || url.pathname.startsWith('/maps') || url.pathname.startsWith('/place')
 }
-const isAllowedTarget = (url: URL) => isShortMapsUrl(url) || isGoogleMapsUrl(url)
-
+const isAllowedRedirectTarget = (url: URL) => isShortMapsUrl(url) || isGoogleHost(url)
 const responseHeaders = (origin: string) => ({
   'Access-Control-Allow-Origin': origin,
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -26,10 +28,13 @@ async function expandShortUrl(input: URL) {
   let current = input
   try {
     for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
-      if (!isAllowedTarget(current)) throw new Error('TARGET_NOT_ALLOWED')
+      if (!isAllowedRedirectTarget(current)) throw new Error('TARGET_NOT_ALLOWED')
       const response = await fetch(current.toString(), { method: 'GET', redirect: 'manual', signal: controller.signal, headers: { 'User-Agent': 'TLog-Maps-Resolver/1.0' } })
       response.body?.cancel().catch(() => {})
-      if (response.status < 300 || response.status >= 400) return current.toString()
+      if (response.status < 300 || response.status >= 400) {
+        if (!response.ok || !isGoogleMapsUrl(current)) throw new Error('RESOLVE_FAILED')
+        return current.toString()
+      }
       if (redirects === MAX_REDIRECTS) throw new Error('TOO_MANY_REDIRECTS')
       const location = response.headers.get('Location'); if (!location) throw new Error('MISSING_REDIRECT')
       current = new URL(location, current)

@@ -7,7 +7,7 @@ import { Sheet } from '../../components/Sheet'
 import { useApp } from '../../context/AppContext'
 import { googleMapsUrl, dayLabel, tripDayCount, uid } from '../../lib/utils'
 import { reverseGeocode, searchPlaces, type PlaceSearchResult } from '../../services/geocoding'
-import { parseOrResolveGoogleMapsUrl, type ParsedGoogleMapsPlace } from '../../services/googleMapsLink'
+import { googleMapsSearchFallbacks, parseOrResolveGoogleMapsUrl, type ParsedGoogleMapsPlace } from '../../services/googleMapsLink'
 import type { ItineraryPlace, TransportMode, TransportSegment, Trip } from '../../types'
 import { ItineraryList } from './ItineraryList'
 import { MapCanvas } from './MapCanvas'
@@ -39,8 +39,16 @@ function AddPlaceSheet({ open, initialQuery, draftPin, onClose, onStartPin, onAd
     event.preventDefault(); setLoading(true); setError('')
     try {
       const result = await parseOrResolveGoogleMapsUrl(linkText)
-      if (!result.ok) { setError(result.reason === 'resolver_not_configured' ? 'Google Maps 단축 링크 확인 서버가 아직 설정되지 않았어요.' : result.reason === 'resolve_failed' || result.reason === 'short_link' ? 'Google Maps 단축 링크를 펼치지 못했어요. 잠시 후 다시 시도해 주세요.' : result.reason === 'coordinates_missing' ? '링크에서 좌표를 찾지 못했어요. 좌표가 포함된 Google Maps 링크인지 확인해 주세요.' : 'Google Maps 링크 형식을 확인해 주세요.'); return }
-      const place: ParsedGoogleMapsPlace = result.place
+      let place: ParsedGoogleMapsPlace | null = result.ok ? result.place : null
+      if (!result.ok && result.reason === 'coordinates_missing' && result.fallbackQuery) {
+        const fallback = googleMapsSearchFallbacks(result.fallbackQuery)
+        for (const query of fallback.queries) {
+          const matches = await searchPlaces(query).catch(() => [])
+          const match = matches[0]; if (!match) continue
+          place = { latitude: match.latitude, longitude: match.longitude, name: fallback.name || match.name, googleMapsUrl: linkText.trim(), source: 'google_maps' }; break
+        }
+      }
+      if (!place) { const reason = result.ok ? 'coordinates_missing' : result.reason; setError(reason === 'resolver_not_configured' ? 'Google Maps 단축 링크 확인 서버가 아직 설정되지 않았어요.' : reason === 'resolve_failed' || reason === 'short_link' ? 'Google Maps 단축 링크를 펼치지 못했어요. 잠시 후 다시 시도해 주세요.' : reason === 'coordinates_missing' ? 'Google Maps 링크는 확인했지만 위치 좌표를 찾지 못했어요.' : 'Google Maps 링크 형식을 확인해 주세요.'); return }
       let address: string | null = null
       try { address = await reverseGeocode(place.latitude, place.longitude) } catch { /* Coordinates remain usable when Nominatim is unavailable. */ }
       setCandidate({ ...place, address: address || `주소 정보를 가져오지 못했어요 · ${place.latitude.toFixed(5)}, ${place.longitude.toFixed(5)}` }); setMode('confirm')
