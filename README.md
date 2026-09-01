@@ -23,7 +23,10 @@ Supabase, Mapbox, Google Maps 임베드 및 유료 지도 API는 사용하지 �
 ## 주요 기능
 
 - 이메일/비밀번호 로그인과 회원가입, 세션 유지
+- 프로필 시트에서 안전한 로그아웃
 - 초대 코드와 공유 링크가 있는 여행방
+- 여행 카드 오른쪽 스와이프 공개 일정 공유, 왼쪽 스와이프 여행 삭제
+- 비로그인 방문자에게 지도·웨이포인트·일정 목록만 보여주는 읽기 전용 공개 링크
 - Firestore `onSnapshot()` 기반 멤버·노트·장소·이동·채팅·제안 실시간 반영
 - 모바일 블록 노트와 800ms 디바운스 저장
 - 노트 → 채팅 공유 → 제안 → 투표 → 일정 승인 흐름
@@ -84,6 +87,7 @@ Firestore 구조:
 ```text
 users/{userId}
 inviteCodes/{inviteCode}
+publicTrips/{publicShareId}  # 일정 전용 공개 스냅샷
 trips/{tripId}
   members/{userId}
   notes/{noteId}
@@ -159,6 +163,8 @@ npm run build
 E2E 테스트는 390×844에서 여행·노트 생성, Google Maps URL 장소 추가, 지도 직접 핀, LIST 전환, 채팅 전송을 확인합니다.
 
 Production E2E는 실제 `https://rudwndgus.github.io/t-log/`에서 고유한 Firebase 계정 2개를 만들고 Edge, Firefox, WebKit의 격리된 컨텍스트를 사용합니다. 여행의 새로고침 생존, 같은 계정의 다른 엔진 조회, 초대 참가, 실시간 노트·채팅·투표·장소, Firestore 핵심 문서 존재를 검증합니다. 실행 전 `npx playwright install firefox webkit`이 필요하며 테스트 계정과 방은 production Firestore에 증거 데이터로 남습니다.
+
+README 상단의 **웹앱** 링크는 `main`의 최신 GitHub Pages 배포 주소입니다. 호스팅 주소가 바뀌는 배포에서는 코드와 같은 커밋으로 이 링크도 갱신합니다.
 
 ## 프로젝트 구조
 

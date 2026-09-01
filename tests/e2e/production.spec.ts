@@ -30,6 +30,8 @@ async function signUp(page: Page, account: { name: string; email: string }) {
   await page.getByLabel('이메일').fill(account.email)
   await page.getByLabel('비밀번호').fill(password)
   await page.locator('form').getByRole('button', { name: '계정 만들기' }).click()
+  await expect(page.getByRole('button', { name: '로그아웃' })).toBeVisible({ timeout: 20_000 })
+  if (page.url().includes('/auth')) await page.goto(productionUrl)
   await expect(page).toHaveURL(/#\/$/)
 }
 
@@ -41,6 +43,8 @@ async function signIn(page: Page, email: string) {
     await page.getByLabel('이메일').fill(email)
     await page.getByLabel('비밀번호').fill(password)
     await page.locator('form').getByRole('button', { name: '로그인' }).click()
+    await expect(page.getByRole('button', { name: '로그아웃' })).toBeVisible({ timeout: 20_000 })
+    if (page.url().includes('/auth')) await page.goto(productionUrl)
     await expect(page).toHaveURL(/#\/$/)
   }
 }
@@ -77,6 +81,15 @@ async function firebaseSession(email: string) {
 async function expectFirestoreDocument(path: string, token: string) {
   const response = await fetch(`https://firestore.googleapis.com/v1/projects/tlog-8833f/databases/(default)/documents/${path}`, { headers: { authorization: `Bearer ${token}` } })
   expect(response.status, `${path}: ${await response.text()}`).toBe(200)
+}
+
+async function swipeTrip(page: Page, trip: string, direction: 'left' | 'right') {
+  const row = page.locator('.trip-swipe').filter({ hasText: trip })
+  const content = row.locator('.trip-swipe__content'); const box = await content.boundingBox()
+  if (!box) throw new Error(`Trip swipe row not visible: ${trip}`)
+  const startX = box.x + box.width / 2; const y = box.y + box.height / 2
+  await page.mouse.move(startX, y); await page.mouse.down(); await page.mouse.move(startX + (direction === 'right' ? 90 : -90), y, { steps: 8 }); await page.mouse.up()
+  return row
 }
 
 test('production survives reload and synchronizes across Edge, Firefox, and WebKit', async ({ browserName }, testInfo) => {
@@ -185,9 +198,41 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     await expectFirestoreDocument(`trips/${tripId}/members/${memberSession.localId}`, memberSession.idToken)
     await expectFirestoreDocument(`inviteCodes/${inviteCode}`, ownerSession.idToken)
 
+    await pageA.goto(productionUrl)
+    const sharedRow = await swipeTrip(pageA, tripName, 'right')
+    await sharedRow.getByRole('button', { name: `${tripName} 일정 공유` }).click()
+    const shareInput = pageA.getByLabel('읽기 전용 공개 링크')
+    await expect(shareInput).toBeVisible({ timeout: 15_000 })
+    const publicUrl = await shareInput.inputValue()
+    expect(publicUrl).toContain('#/shared/')
+
+    const publicContext = await gecko.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }); contexts.push(publicContext)
+    const publicPage = await publicContext.newPage(); watch(publicPage, 'firefox-public', errors)
+    await publicPage.goto(publicUrl, { waitUntil: 'domcontentloaded' })
+    await expect(publicPage.getByText(tripName)).toBeVisible()
+    await expect(publicPage.locator('.map-canvas[data-map-loaded="true"]')).toBeVisible({ timeout: 15_000 })
+    await publicPage.getByRole('button', { name: /LIST/ }).click()
+    await expect(publicPage.getByText(pinName)).toBeVisible()
+    await expect(publicPage.getByText(googlePlaceName)).toBeVisible()
+    await expect(publicPage.getByRole('link', { name: '채팅' })).toHaveCount(0)
+    await expect(publicPage.getByText('초대 코드')).toHaveCount(0)
+
+    await pageSameAccount.goto(productionUrl)
+    const deleteRow = await swipeTrip(pageSameAccount, privateTripName, 'left')
+    await deleteRow.getByRole('button', { name: `${privateTripName} 삭제` }).click()
+    await pageSameAccount.getByRole('dialog', { name: '여행 삭제' }).getByRole('button', { name: '여행 삭제' }).click()
+    await expect(pageSameAccount.getByText(privateTripName)).toHaveCount(0)
+    await pageSameAccount.reload({ waitUntil: 'domcontentloaded' })
+    await expect(pageSameAccount.getByText(privateTripName)).toHaveCount(0)
+
+    await pageB.goto(productionUrl)
+    await pageB.getByRole('button', { name: '프로필' }).click()
+    await pageB.getByRole('dialog', { name: '내 프로필' }).getByRole('button', { name: '로그아웃' }).click()
+    await expect(pageB.getByRole('link', { name: /클라우드에 연결하기/ })).toBeVisible()
+
     await testInfo.attach('edge-owner.png', { body: await pageA.screenshot(), contentType: 'image/png' })
     await testInfo.attach('webkit-member.png', { body: await pageB.screenshot(), contentType: 'image/png' })
-    await testInfo.attach('production-proof.json', { body: Buffer.from(JSON.stringify({ tripId, inviteCode, runnerBrowserName: browserName, engines: ['Edge/Chromium', 'Firefox/Gecko', 'WebKit'], accountA: accountA.email, accountB: accountB.email, verifiedAt: new Date().toISOString() }, null, 2)), contentType: 'application/json' })
+    await testInfo.attach('production-proof.json', { body: Buffer.from(JSON.stringify({ tripId, inviteCode, publicUrl, runnerBrowserName: browserName, engines: ['Edge/Chromium', 'Firefox/Gecko', 'WebKit'], accountA: accountA.email, accountB: accountB.email, verifiedAt: new Date().toISOString() }, null, 2)), contentType: 'application/json' })
     expect(errors.filter((entry) => !entry.includes('favicon'))).toEqual([])
   } finally {
     const cleanup = Promise.allSettled([

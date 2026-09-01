@@ -1,4 +1,4 @@
-import { arrayUnion, collection, deleteDoc, doc, getDoc, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type Firestore, type Unsubscribe } from 'firebase/firestore'
+import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type DocumentReference, type Firestore, type Unsubscribe } from 'firebase/firestore'
 import type { ChatMessage, ItineraryPlace, NotePage, Profile, Proposal, TLogData, TransportSegment, Trip, TripMember } from '../types'
 
 const emptyData: TLogData = { trips: [], notes: [], places: [], segments: [], messages: [], proposals: [] }
@@ -15,7 +15,7 @@ export function subscribeToUserData(database: Firestore, userId: string, onData:
   const tripQuery = query(collection(database, 'trips'), where('memberIds', 'array-contains', userId))
   const unsubscribeTrips = onSnapshot(tripQuery, (snapshot) => {
     childUnsubscribers.forEach((unsubscribe) => unsubscribe()); childUnsubscribers = []; members.clear(); notes.clear(); places.clear(); segments.clear(); messages.clear(); proposals.clear()
-    trips = snapshot.docs.map((item): Trip => { const row = item.data(); return { id: item.id, name: row.name, destination: row.destination, startDate: row.startDate, endDate: row.endDate, emoji: row.emoji || '✈️', inviteCode: row.inviteCode, members: [], createdBy: row.ownerId, createdAt: asIso(row.createdAt) } }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    trips = snapshot.docs.map((item): Trip => { const row = item.data(); return { id: item.id, name: row.name, destination: row.destination, startDate: row.startDate, endDate: row.endDate, emoji: row.emoji || '✈️', inviteCode: row.inviteCode, members: [], createdBy: row.ownerId, createdAt: asIso(row.createdAt), publicShareId: row.publicShareId ? String(row.publicShareId) : undefined } }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     trips.forEach((trip) => {
       listen<TripMember>(trip.id, 'members', members, (id, row) => ({ id, profile: { id: String(row.userId), name: String(row.displayName || '여행자'), email: row.email ? String(row.email) : undefined }, role: row.role === 'owner' ? 'OWNER' : 'MEMBER' }))
       listen<NotePage>(trip.id, 'notes', notes, (id, row) => ({ id, tripId: trip.id, title: String(row.title || '새 페이지'), blocks: Array.isArray(row.blocks) ? row.blocks as NotePage['blocks'] : [], updatedAt: asIso(row.updatedAt) }))
@@ -56,3 +56,77 @@ export async function saveVote(database: Firestore, tripId: string, proposalId: 
   await runTransaction(database, async (transaction) => { const snapshot = await transaction.get(proposalRef); if (!snapshot.exists()) throw new Error('PROPOSAL_NOT_FOUND'); const options = (snapshot.data().options || []) as Proposal['options']; const updated = options.map((option) => ({ ...option, voterIds: option.id === optionId ? Array.from(new Set([...option.voterIds.filter((id) => id !== userId), userId])) : option.voterIds.filter((id) => id !== userId) })); transaction.update(proposalRef, { options: updated, updatedAt: serverTimestamp() }); transaction.set(voteRef, { userId, optionId, updatedAt: serverTimestamp() }) })
 }
 export const saveProposalStatus = (database: Firestore, tripId: string, proposalId: string, status: Proposal['status']) => updateDoc(doc(database, 'trips', tripId, 'proposals', proposalId), { status, updatedAt: serverTimestamp() })
+
+const publicPlaceFields = (place: ItineraryPlace) => ({
+  id: place.id, day: place.day, name: place.name, address: place.address,
+  latitude: place.latitude, longitude: place.longitude, startTime: place.startTime || null,
+  endTime: place.endTime || null, sortOrder: place.sortOrder, category: place.category || null
+})
+
+export interface PublicTrip {
+  id: string
+  sourceTripId: string
+  name: string
+  destination: string
+  startDate: string
+  endDate: string
+  emoji: string
+  places: ItineraryPlace[]
+}
+
+export async function publishTripDocument(database: Firestore, trip: Trip, places: ItineraryPlace[], shareId: string, userId: string) {
+  const batch = writeBatch(database)
+  batch.set(doc(database, 'publicTrips', shareId), {
+    sourceTripId: trip.id, ownerId: userId, name: trip.name, destination: trip.destination,
+    startDate: trip.startDate, endDate: trip.endDate, emoji: trip.emoji,
+    places: places.filter((place) => place.tripId === trip.id).map(publicPlaceFields),
+    publishedAt: serverTimestamp(), updatedAt: serverTimestamp()
+  })
+  batch.update(doc(database, 'trips', trip.id), { publicShareId: shareId, updatedAt: serverTimestamp() })
+  await batch.commit()
+}
+
+export async function getPublicTrip(database: Firestore, shareId: string): Promise<PublicTrip | null> {
+  const snapshot = await getDoc(doc(database, 'publicTrips', shareId))
+  if (!snapshot.exists()) return null
+  const row = snapshot.data(); const rawPlaces = Array.isArray(row.places) ? row.places as Array<Record<string, unknown>> : []
+  return {
+    id: shareId, sourceTripId: String(row.sourceTripId), name: String(row.name), destination: String(row.destination),
+    startDate: String(row.startDate), endDate: String(row.endDate), emoji: String(row.emoji || '✈️'),
+    places: rawPlaces.map((place, index): ItineraryPlace => ({
+      id: String(place.id || index), tripId: shareId, day: Number(place.day || 0), name: String(place.name || '장소'),
+      address: String(place.address || ''), latitude: Number(place.latitude), longitude: Number(place.longitude),
+      startTime: place.startTime ? String(place.startTime) : undefined, endTime: place.endTime ? String(place.endTime) : undefined,
+      sortOrder: Number(place.sortOrder || 0), category: place.category ? String(place.category) : undefined,
+      source: 'manual_pin', createdBy: 'public', createdAt: ''
+    }))
+  }
+}
+
+async function collectionReferences(database: Firestore, ...path: string[]) {
+  const [first, ...rest] = path
+  if (!first) return []
+  return (await getDocs(collection(database, first, ...rest))).docs.map((snapshot) => snapshot.ref)
+}
+
+async function deleteReferences(database: Firestore, references: DocumentReference[]) {
+  for (let offset = 0; offset < references.length; offset += 450) {
+    const batch = writeBatch(database)
+    references.slice(offset, offset + 450).forEach((reference) => batch.delete(reference))
+    await batch.commit()
+  }
+}
+
+export async function deleteTripDocument(database: Firestore, trip: Trip) {
+  const childNames = ['members', 'notes', 'places', 'segments', 'messages', 'proposals']
+  const childGroups = await Promise.all(childNames.map((name) => collectionReferences(database, 'trips', trip.id, name)))
+  const proposalReferences = childGroups[5]
+  const voteGroups = await Promise.all(proposalReferences.map((proposal) => collectionReferences(database, 'trips', trip.id, 'proposals', proposal.id, 'votes')))
+  await deleteReferences(database, voteGroups.flat())
+  await deleteReferences(database, childGroups.flat())
+  const finalBatch = writeBatch(database)
+  finalBatch.delete(doc(database, 'inviteCodes', trip.inviteCode))
+  if (trip.publicShareId) finalBatch.delete(doc(database, 'publicTrips', trip.publicShareId))
+  finalBatch.delete(doc(database, 'trips', trip.id))
+  await finalBatch.commit()
+}

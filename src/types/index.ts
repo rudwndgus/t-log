@@ -17,6 +17,7 @@ export interface Trip {
   members: TripMember[]
   createdBy: string
   createdAt: string
+  publicShareId?: string
 }
 export interface NoteBlock { id: string; type: BlockType; content: string; checked?: boolean }
 export interface NotePage { id: string; tripId: string; title: string; blocks: NoteBlock[]; updatedAt: string }

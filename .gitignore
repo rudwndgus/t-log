@@ -11,6 +11,7 @@ test-results
 playwright-report
 playwright-report-production
 home.png
+*-preview.png
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts

@@ -21,6 +21,19 @@ service cloud.firestore {
       allow delete: if signedIn() && owner(resource.data.tripId);
     }
 
+    match /publicTrips/{shareId} {
+      allow get: if true;
+      allow list: if false;
+      allow create, update: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'sourceTripId', 'ownerId', 'name', 'destination', 'startDate', 'endDate',
+          'emoji', 'places', 'publishedAt', 'updatedAt'
+        ])
+        && owner(request.resource.data.sourceTripId);
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
     match /trips/{tripId} {
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
@@ -64,7 +77,8 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if member(tripId);
         allow create: if member(tripId) && request.resource.data.author.id == request.auth.uid;
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if owner(tripId);
       }
       match /proposals/{proposalId} {
         allow read, create, update: if member(tripId);
@@ -72,7 +86,8 @@ service cloud.firestore {
 
         match /votes/{userId} {
           allow read: if member(tripId);
-          allow create, update, delete: if member(tripId) && request.auth.uid == userId;
+          allow create, update: if member(tripId) && request.auth.uid == userId;
+          allow delete: if owner(tripId) || (member(tripId) && request.auth.uid == userId);
         }
       }
     }
