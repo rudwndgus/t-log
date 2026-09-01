@@ -16,6 +16,10 @@ export const isFirebaseConfigured = !forceLocalMode && Object.values(firebaseCon
 const hasExistingApp = getApps().length > 0
 export const firebaseApp = isFirebaseConfigured ? (hasExistingApp ? getApp() : initializeApp(firebaseConfig)) : null
 export const auth = firebaseApp ? getAuth(firebaseApp) : null
-export const db = firebaseApp ? (hasExistingApp ? getFirestore(firebaseApp) : initializeFirestore(firebaseApp, { ignoreUndefinedProperties: true, experimentalForceLongPolling: true })) : null
+export const db = firebaseApp ? (hasExistingApp ? getFirestore(firebaseApp) : initializeFirestore(firebaseApp, {
+  ignoreUndefinedProperties: true,
+  experimentalForceLongPolling: true,
+  experimentalLongPollingOptions: { timeoutSeconds: 5 }
+})) : null
 
 if (auth) void setPersistence(auth, browserLocalPersistence)
