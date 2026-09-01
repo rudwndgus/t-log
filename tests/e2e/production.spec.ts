@@ -30,8 +30,7 @@ async function signUp(page: Page, account: { name: string; email: string }) {
   await page.getByLabel('이메일').fill(account.email)
   await page.getByLabel('비밀번호').fill(password)
   await page.locator('form').getByRole('button', { name: '계정 만들기' }).click()
-  await expect(page.getByRole('button', { name: '로그아웃' })).toBeVisible({ timeout: 20_000 })
-  if (page.url().includes('/auth')) await page.goto(productionUrl)
+  await expect(page).toHaveURL(/#\/$/, { timeout: 30_000 })
   await expect(page.getByRole('heading', { name: 'T Log' })).toBeVisible()
 }
 
@@ -43,8 +42,7 @@ async function signIn(page: Page, email: string) {
     await page.getByLabel('이메일').fill(email)
     await page.getByLabel('비밀번호').fill(password)
     await page.locator('form').getByRole('button', { name: '로그인' }).click()
-    await expect(page.getByRole('button', { name: '로그아웃' })).toBeVisible({ timeout: 20_000 })
-    if (page.url().includes('/auth')) await page.goto(productionUrl)
+    await expect(page).toHaveURL(/#\/$/, { timeout: 20_000 })
     await expect(page.getByRole('heading', { name: 'T Log' })).toBeVisible()
   }
 }

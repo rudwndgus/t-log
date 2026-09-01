@@ -82,7 +82,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [reportCloudError])
 
   const signIn = async (email: string, password: string) => { if (!auth) throw new Error('NOT_CONFIGURED'); await signInWithEmailAndPassword(auth, email, password) }
-  const signUp = async (name: string, email: string, password: string) => { if (!auth || !db) throw new Error('NOT_CONFIGURED'); const credential = await createUserWithEmailAndPassword(auth, email, password); const nextProfile = { id: credential.user.uid, name: name.trim(), email }; await updateProfile(credential.user, { displayName: name.trim() }); await saveProfile(db, nextProfile); setProfile(nextProfile) }
+  const signUp = async (name: string, email: string, password: string) => { if (!auth || !db) throw new Error('NOT_CONFIGURED'); const credential = await createUserWithEmailAndPassword(auth, email, password); const nextProfile = { id: credential.user.uid, name: name.trim(), email }; await updateProfile(credential.user, { displayName: name.trim() }); await credential.user.getIdToken(true); await saveProfile(db, nextProfile); setProfile(nextProfile) }
   const signOut = async () => { if (auth) await firebaseSignOut(auth); setSignedIn(false); setData(emptyData); setProfile(fallbackProfile); setCloudError(null) }
   const setProfileName = (name: string) => { const next = name.trim() || '여행자'; const updated = { ...profile, name: next }; setProfile(updated); if (auth?.currentUser) void updateProfile(auth.currentUser, { displayName: next }).catch((error) => reportCloudError('update-auth-profile', error, { userId: profile.id })); if (db && signedIn) void saveProfile(db, updated).catch((error) => reportCloudError('save-profile', error, { userId: profile.id })) }
 
