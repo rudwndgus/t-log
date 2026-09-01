@@ -79,7 +79,7 @@ async function expectFirestoreDocument(path: string, token: string) {
   expect(response.status, `${path}: ${await response.text()}`).toBe(200)
 }
 
-test('production survives reload and synchronizes across Edge, Firefox, and WebKit', async ({}, testInfo) => {
+test('production survives reload and synchronizes across Edge, Firefox, and WebKit', async ({ browserName }, testInfo) => {
   const errors: string[] = []
   const edge = await chromium.launch({ headless: true, executablePath: edgePath })
   const gecko = await firefox.launch({ headless: true })
@@ -107,7 +107,7 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     await pageB.getByRole('link', { name: /초대 코드가 있나요/ }).click()
     await pageB.getByLabel('초대 코드').fill(inviteCode)
     await pageB.getByRole('button', { name: '여행 참여하기' }).click()
-    await expect(pageB).toHaveURL(new RegExp(`#\/trip\/${tripId}\/note$`))
+    await expect(pageB).toHaveURL(new RegExp(`#/trip/${tripId}/note$`))
     await expect(pageB.getByText(tripName)).toBeVisible()
     await pageB.getByRole('link', { name: '여행 목록' }).click()
     await expect(pageB.getByText(tripName)).toBeVisible()
@@ -187,10 +187,12 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
 
     await testInfo.attach('edge-owner.png', { body: await pageA.screenshot(), contentType: 'image/png' })
     await testInfo.attach('webkit-member.png', { body: await pageB.screenshot(), contentType: 'image/png' })
-    await testInfo.attach('production-proof.json', { body: Buffer.from(JSON.stringify({ tripId, inviteCode, engines: ['Edge/Chromium', 'Firefox/Gecko', 'WebKit'], accountA: accountA.email, accountB: accountB.email, verifiedAt: new Date().toISOString() }, null, 2)), contentType: 'application/json' })
+    await testInfo.attach('production-proof.json', { body: Buffer.from(JSON.stringify({ tripId, inviteCode, runnerBrowserName: browserName, engines: ['Edge/Chromium', 'Firefox/Gecko', 'WebKit'], accountA: accountA.email, accountB: accountB.email, verifiedAt: new Date().toISOString() }, null, 2)), contentType: 'application/json' })
     expect(errors.filter((entry) => !entry.includes('favicon'))).toEqual([])
   } finally {
-    await Promise.all(contexts.map((context) => context.close()))
-    await Promise.all([edge.close(), gecko.close(), safari.close()])
+    const cleanup = Promise.allSettled([
+      ...contexts.map((context) => context.close()), edge.close(), gecko.close(), safari.close()
+    ])
+    await Promise.race([cleanup, new Promise((resolve) => setTimeout(resolve, 5_000))])
   }
 })
