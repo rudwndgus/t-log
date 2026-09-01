@@ -76,7 +76,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // A newly-created Auth user emits once before updateProfile finishes.
       // signUp owns that first profile write so two concurrent setDoc calls cannot stall navigation.
       if (user.displayName) void saveProfile(database, nextProfile).catch((error) => reportCloudError('save-profile', error, { userId: user.uid }))
-      unsubscribeData = subscribeToUserData(database, user.uid, (nextData) => { setData(nextData); setReady(true) }, (error) => { reportCloudError('subscribe-user-data', error, { userId: user.uid }); setReady(true) })
+      unsubscribeData = subscribeToUserData(database, user.uid, (nextData) => { setData(nextData); setReady(true) }, (error, context) => { reportCloudError('subscribe-user-data', error, { userId: user.uid, ...context }); setReady(true) })
     }, (error) => { reportCloudError('auth-state', error); setReady(true) })
     return () => { unsubscribeAuth(); unsubscribeData?.() }
   }, [reportCloudError])

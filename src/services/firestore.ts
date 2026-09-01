@@ -4,16 +4,20 @@ import type { ChatMessage, ItineraryPlace, NotePage, Profile, Proposal, TLogData
 const emptyData: TLogData = { trips: [], notes: [], places: [], segments: [], messages: [], proposals: [] }
 const asIso = (value: unknown) => value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function' ? value.toDate().toISOString() : typeof value === 'string' ? value : new Date().toISOString()
 
-export function subscribeToUserData(database: Firestore, userId: string, onData: (data: TLogData) => void, onError: (error: Error) => void): Unsubscribe {
+export function subscribeToUserData(database: Firestore, userId: string, onData: (data: TLogData) => void, onError: (error: Error, context?: Record<string, unknown>) => void): Unsubscribe {
   let childUnsubscribers: Unsubscribe[] = []
   let trips: Trip[] = []; const members = new Map<string, TripMember[]>(); const notes = new Map<string, NotePage[]>(); const places = new Map<string, ItineraryPlace[]>(); const segments = new Map<string, TransportSegment[]>(); const messages = new Map<string, ChatMessage[]>(); const proposals = new Map<string, Proposal[]>()
   const emit = () => onData({ trips: trips.map((trip) => ({ ...trip, members: members.get(trip.id) || trip.members })), notes: Array.from(notes.values()).flat(), places: Array.from(places.values()).flat(), segments: Array.from(segments.values()).flat(), messages: Array.from(messages.values()).flat(), proposals: Array.from(proposals.values()).flat() })
   const listen = <T>(tripId: string, path: string, target: Map<string, T[]>, mapRow: (id: string, row: Record<string, unknown>) => T, sortField?: string) => {
     const base = collection(database, 'trips', tripId, path); const source = sortField ? query(base, orderBy(sortField)) : base
-    childUnsubscribers.push(onSnapshot(source, (snapshot) => { target.set(tripId, snapshot.docs.map((item) => mapRow(item.id, item.data()))); emit() }, onError))
+    childUnsubscribers.push(onSnapshot(source, (snapshot) => { target.set(tripId, snapshot.docs.map((item) => mapRow(item.id, item.data()))); emit() }, (error) => onError(error, { tripId, collection: path })))
   }
   const tripQuery = query(collection(database, 'trips'), where('memberIds', 'array-contains', userId))
   const unsubscribeTrips = onSnapshot(tripQuery, (snapshot) => {
+    // A local latency-compensated trip snapshot can arrive before the create
+    // batch is acknowledged. Starting child listeners at that point makes the
+    // server evaluate membership against a parent that does not exist yet.
+    if (snapshot.metadata.hasPendingWrites) return
     childUnsubscribers.forEach((unsubscribe) => unsubscribe()); childUnsubscribers = []; members.clear(); notes.clear(); places.clear(); segments.clear(); messages.clear(); proposals.clear()
     trips = snapshot.docs.map((item): Trip => { const row = item.data(); return { id: item.id, name: row.name, destination: row.destination, startDate: row.startDate, endDate: row.endDate, emoji: row.emoji || '✈️', inviteCode: row.inviteCode, members: [], createdBy: row.ownerId, createdAt: asIso(row.createdAt), publicShareId: row.publicShareId ? String(row.publicShareId) : undefined } }).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     trips.forEach((trip) => {
@@ -24,7 +28,7 @@ export function subscribeToUserData(database: Firestore, userId: string, onData:
       listen<ChatMessage>(trip.id, 'messages', messages, (id, row) => ({ id, tripId: trip.id, type: row.type as ChatMessage['type'], body: row.body ? String(row.body) : undefined, author: row.author as Profile, createdAt: asIso(row.createdAt), referencedNotePageId: row.referencedNotePageId ? String(row.referencedNotePageId) : undefined, referencedPlaceId: row.referencedPlaceId ? String(row.referencedPlaceId) : undefined, proposalId: row.proposalId ? String(row.proposalId) : undefined }), 'createdAt')
       listen<Proposal>(trip.id, 'proposals', proposals, (id, row) => ({ id, tripId: trip.id, title: String(row.title), description: row.description ? String(row.description) : undefined, status: row.status as Proposal['status'], options: Array.isArray(row.options) ? row.options as Proposal['options'] : [], referencedNotePageId: row.referencedNotePageId ? String(row.referencedNotePageId) : undefined, referencedPlaceId: row.referencedPlaceId ? String(row.referencedPlaceId) : undefined, proposedPlace: row.proposedPlace as Proposal['proposedPlace'], createdBy: String(row.createdBy), createdAt: asIso(row.createdAt) }))
     }); emit()
-  }, onError)
+  }, (error) => onError(error, { collection: 'trips' }))
   return () => { unsubscribeTrips(); childUnsubscribers.forEach((unsubscribe) => unsubscribe()); onData(emptyData) }
 }
 
