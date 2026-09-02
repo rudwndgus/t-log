@@ -59,13 +59,22 @@ export async function resolveGoogleMapsShortUrl(url: string): Promise<ResolvedGo
   const endpoint = String(import.meta.env.VITE_GOOGLE_MAPS_RESOLVER_URL || '').trim()
   if (!endpoint) throw new Error('RESOLVER_NOT_CONFIGURED')
   const requestUrl = new URL(endpoint); requestUrl.searchParams.set('url', url)
-  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 15_000)
+  const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 20_000)
   try {
-    const response = await fetch(requestUrl, { method: 'GET', cache: 'no-store', signal: controller.signal })
-    const payload = await response.json() as { success?: boolean; expandedUrl?: unknown; location?: { latitude?: unknown; longitude?: unknown; name?: unknown } }
-    if (!response.ok || payload.success !== true || typeof payload.expandedUrl !== 'string') throw new Error('RESOLVE_FAILED')
-    const latitude = Number(payload.location?.latitude); const longitude = Number(payload.location?.longitude)
-    return { expandedUrl: payload.expandedUrl, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? { location: { latitude, longitude, name: typeof payload.location?.name === 'string' ? payload.location.name : undefined } } : {}) }
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch(requestUrl, { method: 'GET', cache: 'no-store', signal: controller.signal })
+        const payload = await response.json() as { success?: boolean; expandedUrl?: unknown; location?: { latitude?: unknown; longitude?: unknown; name?: unknown } }
+        if (response.ok && payload.success === true && typeof payload.expandedUrl === 'string') {
+          const latitude = Number(payload.location?.latitude); const longitude = Number(payload.location?.longitude)
+          return { expandedUrl: payload.expandedUrl, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? { location: { latitude, longitude, name: typeof payload.location?.name === 'string' ? payload.location.name : undefined } } : {}) }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) throw error
+      }
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)))
+    }
+    throw new Error('RESOLVE_FAILED')
   } finally { clearTimeout(timeout) }
 }
 

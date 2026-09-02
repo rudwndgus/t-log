@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { googleMapsSearchFallbacks, parseGoogleMapsUrl, parseOrResolveGoogleMapsUrl } from './googleMapsLink'
+import { describe, expect, it, vi } from 'vitest'
+import { googleMapsSearchFallbacks, parseGoogleMapsUrl, parseOrResolveGoogleMapsUrl, resolveGoogleMapsShortUrl } from './googleMapsLink'
 
 describe('Google Maps URL parser', () => {
   it('extracts coordinates and a place name from an expanded URL', () => {
@@ -53,6 +53,16 @@ describe('Google Maps URL parser', () => {
     const input = 'https://www.google.com/maps/search/CN+Tower'
     const result = await parseOrResolveGoogleMapsUrl(input, async (url) => ({ expandedUrl: url, location: { latitude: 43.6426, longitude: -79.3871, name: 'CN Tower' } }))
     expect(result.ok && result.place).toMatchObject({ latitude: 43.6426, longitude: -79.3871, googleMapsUrl: input })
+  })
+  it('retries a temporary Worker failure before returning coordinates', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_RESOLVER_URL', 'https://resolver.example.test')
+    const request = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: false, error: 'RESOLVE_FAILED' }), { status: 502 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, expandedUrl: 'https://www.google.com/maps?q=Stussy', location: { latitude: 43.6514661, longitude: -79.3971051, name: 'Stüssy' } }), { status: 200 }))
+    try {
+      await expect(resolveGoogleMapsShortUrl('https://maps.app.goo.gl/TUZf13bYnhcKtXF47?g_st=ic')).resolves.toMatchObject({ location: { latitude: 43.6514661, longitude: -79.3971051 } })
+      expect(request).toHaveBeenCalledTimes(2)
+    } finally { request.mockRestore(); vi.unstubAllEnvs() }
   })
   it('rejects non-Google URLs', () => expect(parseGoogleMapsUrl('https://example.com/@43.1,-79.1')).toEqual({ ok: false, reason: 'invalid' }))
 })

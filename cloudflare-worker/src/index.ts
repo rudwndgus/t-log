@@ -1,7 +1,7 @@
 // Kept as dashboard-pasteable JavaScript even though Wrangler uses a .ts entry.
 const PRODUCTION_ORIGIN = 'https://rudwndgus.github.io';
-const MAX_REDIRECTS = 8;
 const TIMEOUT_MS = 10000;
+const RESOLVE_ATTEMPTS = 3;
 
 const isAllowedOrigin = (origin) =>
   origin === PRODUCTION_ORIGIN ||
@@ -31,9 +31,6 @@ const isGoogleMapsUrl = (url) => {
     url.pathname.startsWith('/place')
   );
 };
-
-const isAllowedRedirectTarget = (url) =>
-  isShortMapsUrl(url) || isGoogleHost(url);
 
 const responseHeaders = (origin) => ({
   'Access-Control-Allow-Origin': origin,
@@ -178,58 +175,42 @@ async function expandShortUrl(input) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  let current = input;
-
   try {
-    for (
-      let redirects = 0;
-      redirects <= MAX_REDIRECTS;
-      redirects += 1
-    ) {
-      if (!isAllowedRedirectTarget(current)) {
-        throw new Error('TARGET_NOT_ALLOWED');
-      }
+    for (let attempt = 0; attempt < RESOLVE_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch(input.toString(), {
+          method: 'GET',
+          redirect: 'follow',
+          signal: controller.signal,
+          headers: {
+            Accept: 'text/html,application/xhtml+xml',
+            'Accept-Language': 'ko,en;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (compatible; TLogMapsResolver/1.0)',
+          },
+        });
+        const expanded = new URL(response.url);
+        response.body?.cancel().catch(() => {});
 
-      const response = await fetch(current.toString(), {
-        method: 'GET',
-        redirect: 'manual',
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'TLog-Maps-Resolver/1.0',
-        },
-      });
-
-      response.body?.cancel().catch(() => {});
-
-      if (response.status < 300 || response.status >= 400) {
-        if (!response.ok || !isGoogleMapsUrl(current)) {
-          throw new Error('RESOLVE_FAILED');
+        if (response.ok && isGoogleMapsUrl(expanded)) {
+          return expanded.toString();
         }
-
-        return current.toString();
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
       }
 
-      if (redirects === MAX_REDIRECTS) {
-        throw new Error('TOO_MANY_REDIRECTS');
+      if (attempt + 1 < RESOLVE_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, 180 * (attempt + 1)));
       }
-
-      const location = response.headers.get('Location');
-
-      if (!location) {
-        throw new Error('MISSING_REDIRECT');
-      }
-
-      current = new URL(location, current);
     }
 
-    throw new Error('TOO_MANY_REDIRECTS');
+    throw new Error('RESOLVE_FAILED');
   } finally {
     clearTimeout(timeout);
   }
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, _environment, context) {
     const origin = request.headers.get('Origin') || '';
 
     if (!isAllowedOrigin(origin)) {
@@ -282,16 +263,25 @@ export default {
     }
 
     try {
+      const cache = typeof caches !== 'undefined' ? caches.default : null;
+      const cacheUrl = new URL(request.url);
+      cacheUrl.searchParams.set('__origin', origin);
+      const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+      const cached = cache ? await cache.match(cacheKey) : null;
+      if (cached) return cached;
+
       const expandedUrl = isShortMapsUrl(shortUrl)
         ? await expandShortUrl(shortUrl)
         : shortUrl.toString();
       const location = await geocodeExpandedUrl(expandedUrl);
-
-      return json(origin, {
+      const response = json(origin, {
         success: true,
         expandedUrl,
         ...(location ? { location } : {}),
       });
+      response.headers.set('Cache-Control', 'public, max-age=86400');
+      if (cache && context?.waitUntil) context.waitUntil(cache.put(cacheKey, response.clone()));
+      return response;
     } catch (error) {
       return json(
         origin,

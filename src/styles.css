@@ -59,8 +59,9 @@ input, textarea, select { font-size: 16px; }
 .slash-command > button[role="option"].is-selected { background: var(--soft); }
 .slash-command > button[role="option"] > span { flex: none; width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); font-size: 13px; font-weight: 700; }
 .slash-command > button[role="option"] > div { min-width: 0; display: grid; gap: 1px; }
-.media-editable-block { align-items: stretch; padding-top: 6px; padding-bottom: 6px; }
-.media-editable-block > :last-child { flex: 1; min-width: 0; }
+.media-editable-block { align-items: stretch; padding-top: 6px; padding-right: 44px; padding-bottom: 6px; }
+.media-editable-block > :nth-child(2) { flex: 1; min-width: 0; }
+.media-block-options { position: absolute; z-index: 3; top: 10px; right: 7px; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; color: var(--muted); border: 1px solid var(--line); border-radius: 9px; background: rgba(248, 247, 243, .94); }
 .attachment-empty, .attachment-uploading, .attachment-error, .file-attachment { width: 100%; min-height: 58px; padding: 11px 13px; display: flex; align-items: center; gap: 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink); text-align: left; }
 .attachment-empty svg, .file-attachment svg { flex: none; color: var(--accent); }
 .attachment-uploading, .attachment-error { display: grid; gap: 7px; font-size: 12px; }

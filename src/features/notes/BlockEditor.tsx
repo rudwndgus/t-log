@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, GripVertical, MapPin } from 'lucide-react'
+import { ChevronDown, ChevronRight, GripVertical, MapPin, MoreHorizontal } from 'lucide-react'
 import { useLayoutEffect, useRef, type ButtonHTMLAttributes, type KeyboardEvent, type ReactNode, type RefCallback } from 'react'
 import type { NoteBlock } from '../../types'
 
@@ -7,7 +7,7 @@ export function BlockEditor({ block, number, active, inputRef, handleRef, dragHa
   const setInputRef: RefCallback<HTMLTextAreaElement> = (node) => { ownInputRef.current = node; inputRef(node) }
   useLayoutEffect(() => { const textarea = ownInputRef.current; if (!textarea) return; textarea.style.height = 'auto'; textarea.style.height = `${Math.max(textarea.scrollHeight, 28)}px` }, [block.content])
   if (block.type === 'divider') return <div className="editable-block divider-block"><button ref={handleRef} className="block-grip" onClick={onAction} aria-label="블록 옵션" {...dragHandleProps}><GripVertical size={16} /></button><hr /></div>
-  if (customContent) return <div className={`editable-block block--${block.type} media-editable-block`}><button ref={handleRef} className="block-grip" onClick={onAction} aria-label="블록 옵션" {...dragHandleProps}><GripVertical size={16} /></button>{customContent}</div>
+  if (customContent) return <div className={`editable-block block--${block.type} media-editable-block`}><button ref={handleRef} className="block-grip" onClick={onAction} aria-label="블록 옵션" {...dragHandleProps}><GripVertical size={16} /></button>{customContent}<button type="button" className="media-block-options" onClick={onAction} aria-label={`${block.type === 'image' ? '사진' : '파일'} 블록 옵션`}><MoreHorizontal size={19} /></button></div>
   const prefix = block.type === 'bullet' ? '•' : block.type === 'numbered' ? `${number || 1}.` : null
   const isLink = block.type === 'link' && /^https?:\/\/\S+$/i.test(block.content.trim())
   return <div className={`editable-block block--${block.type} ${active ? 'is-active' : ''} ${block.checked ? 'is-checked' : ''}`}>

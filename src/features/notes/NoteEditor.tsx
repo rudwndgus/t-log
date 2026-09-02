@@ -20,11 +20,12 @@ type PickerKind = AttachmentKind | 'folder'
 interface PendingPick { blockId: string; attachmentId: string; kind: PickerKind }
 
 const uploadErrorMessage = (error: unknown) => {
-  const code = error instanceof Error ? error.message : ''
-  return code === 'FILE_TOO_LARGE' ? '파일이 너무 커요. 파일 하나당 15MB 이하로 선택해 주세요.'
-    : code === 'VIDEO_NOT_SUPPORTED' ? '동영상은 아직 첨부할 수 없어요.'
-      : code === 'UNSUPPORTED_IMAGE' || code === 'IMAGE_DECODE_FAILED' ? '이 사진 형식은 브라우저에서 읽을 수 없어요. JPG 또는 PNG로 다시 시도해 주세요.'
-        : '업로드하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.'
+  const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : error instanceof Error ? error.message : ''
+  if (code === 'FILE_TOO_LARGE') return '파일이 너무 커요. 파일 하나당 15MB 이하로 선택해 주세요.'
+  if (code === 'VIDEO_NOT_SUPPORTED') return '동영상은 아직 첨부할 수 없어요.'
+  if (code === 'UNSUPPORTED_IMAGE' || code === 'IMAGE_DECODE_FAILED') return '이 사진 형식은 브라우저에서 읽을 수 없어요. JPG 또는 PNG로 다시 시도해 주세요.'
+  if (code.includes('permission-denied')) return 'Firebase 첨부 권한이 없어요. 최신 Firestore 규칙을 배포해 주세요.'
+  return '업로드하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.'
 }
 
 export function NoteEditor({ tripId, pageId, userId, blocks, onBlocksChange, onAction, onDeleteAttachment }: { tripId: string; pageId: string; userId: string; blocks: NoteBlock[]; onBlocksChange: (blocks: NoteBlock[]) => void; onAction: (target: ActionTarget) => void; onDeleteAttachment: (block: NoteBlock) => void }) {
