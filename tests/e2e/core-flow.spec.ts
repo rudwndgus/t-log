@@ -11,15 +11,14 @@ test('creates a trip and connects note, map, and chat flows', async ({ page }) =
   await page.getByLabel('목적지').fill('Montreal')
   await page.getByRole('button', { name: '여행 만들기' }).click()
 
-  await expect(page.getByText('여행 노트')).toBeVisible()
-  await page.getByRole('button', { name: /첫 페이지 만들기/ }).click()
+  await expect(page.getByLabel('페이지 제목')).toBeVisible()
   await page.getByLabel('페이지 제목').fill('가고 싶은 곳')
 
   await page.getByRole('link', { name: '지도' }).click()
   await page.getByRole('button', { name: /첫 장소 추가/ }).click()
   await page.getByRole('button', { name: /Google Maps 링크 붙여넣기/ }).click()
-  await page.getByPlaceholder(/https:\/\/www.google.com\/maps/).fill('https://www.google.com/maps/place/Old+Montreal/@45.5075,-73.5540,16z')
-  await page.getByRole('button', { name: '좌표 찾기' }).click()
+  await page.getByPlaceholder(/https:\/\/maps.app.goo.gl/).fill('https://www.google.com/maps/place/Old+Montreal/@45.5075,-73.5540,16z')
+  await page.getByRole('button', { name: '위치 확인' }).click()
   await page.getByLabel(/시작 시간/).fill('10:30')
   await page.getByRole('button', { name: '추가', exact: true }).click()
   await page.getByRole('button', { name: /LIST/ }).click()

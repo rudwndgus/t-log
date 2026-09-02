@@ -13,11 +13,18 @@ import { filterNoteCommands, type NoteCommand } from './noteCommands'
 import { SlashCommandMenu } from './SlashCommandMenu'
 import { consecutiveNumber, continuationType, createNoteBlock, isTextBlock, markdownBlockType, normalizeNoteBlocks, replaceNoteBlock, slashQuery } from './noteEditorUtils'
 
-interface ActionTarget { block: NoteBlock; remove: () => void }
+export interface NoteActionTarget {
+  block: NoteBlock
+  remove: () => void
+  moveUp: () => void
+  moveDown: () => void
+  canMoveUp: boolean
+  canMoveDown: boolean
+}
 interface SlashState { blockId: string; query: string; selected: number }
 type AttachmentKind = 'image' | 'pdf' | 'file'
 type PickerKind = AttachmentKind | 'folder'
-interface PendingPick { blockId: string; attachmentId: string; kind: PickerKind }
+interface PendingPick { blockId: string; attachmentId: string; kind: PickerKind; appendContinuation?: boolean }
 
 const uploadErrorMessage = (error: unknown) => {
   const code = typeof error === 'object' && error && 'code' in error ? String(error.code) : error instanceof Error ? error.message : ''
@@ -28,7 +35,7 @@ const uploadErrorMessage = (error: unknown) => {
   return '업로드하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.'
 }
 
-export function NoteEditor({ tripId, pageId, userId, blocks, onBlocksChange, onAction, onDeleteAttachment }: { tripId: string; pageId: string; userId: string; blocks: NoteBlock[]; onBlocksChange: (blocks: NoteBlock[]) => void; onAction: (target: ActionTarget) => void; onDeleteAttachment: (block: NoteBlock) => void }) {
+export function NoteEditor({ tripId, pageId, userId, blocks, onBlocksChange, onAction, onDeleteAttachment }: { tripId: string; pageId: string; userId: string; blocks: NoteBlock[]; onBlocksChange: (blocks: NoteBlock[]) => void; onAction: (target: NoteActionTarget) => void; onDeleteAttachment: (block: NoteBlock) => void }) {
   const inputRefs = useRef(new Map<string, HTMLTextAreaElement>()); const pageRef = useRef(''); const blocksRef = useRef(blocks); blocksRef.current = blocks; const [activeId, setActiveId] = useState<string | null>(null); const [slash, setSlash] = useState<SlashState | null>(null)
   const imageInputRef = useRef<HTMLInputElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const pdfInputRef = useRef<HTMLInputElement>(null); const folderInputRef = useRef<HTMLInputElement>(null); const pendingPickRef = useRef<PendingPick | null>(null); const uploadControllersRef = useRef(new Map<string, AbortController>()); const [uploads, setUploads] = useState<Record<string, AttachmentUploadState>>({})
   const uploadsRef = useRef(uploads); uploadsRef.current = uploads
@@ -54,7 +61,7 @@ export function NoteEditor({ tripId, pageId, userId, blocks, onBlocksChange, onA
     const converted: NoteBlock = { ...current, type: command.type, content: '', checked: command.type === 'todo' ? false : undefined, children: command.type === 'toggle' ? [createNoteBlock(uid())] : undefined, collapsed: command.type === 'toggle' ? true : undefined, attachmentId, attachmentKind, embedUrl: command.type === 'embed' ? '' : undefined }
     if (command.type === 'divider') { const paragraph = createNoteBlock(uid()); commit([...currentBlocks.slice(0, index), converted, paragraph, ...currentBlocks.slice(index + 1)]); setSlash(null); focusBlock(paragraph.id); return }
     commit(currentBlocks.map((block, blockIndex) => blockIndex === index ? converted : block)); setSlash(null)
-    if (command.picker && attachmentId) { setUploads((current) => ({ ...current, [converted.id]: { state: 'selecting', progress: 0 } })); requestPick({ blockId: converted.id, attachmentId, kind: command.picker }) } else focusBlock(converted.id)
+    if (command.picker && attachmentId) { setUploads((current) => ({ ...current, [converted.id]: { state: 'selecting', progress: 0 } })); requestPick({ blockId: converted.id, attachmentId, kind: command.picker, appendContinuation: true }) } else focusBlock(converted.id)
   }, [focusBlock, requestPick])
   const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []); event.target.value = ''; const pending = pendingPickRef.current; pendingPickRef.current = null; if (!files.length || !pending) return
@@ -67,9 +74,10 @@ export function NoteEditor({ tripId, pageId, userId, blocks, onBlocksChange, onA
       kind,
     }))
     const replacements: NoteBlock[] = selected.map((item) => ({ id: item.blockId, type: item.kind === 'image' ? 'image' : 'file', content: '', attachmentId: item.attachmentId, attachmentKind: item.kind }))
-    if (selected.length > 1) {
-      const next = replaceNoteBlock(blocksRef.current, pending.blockId, replacements); blocksRef.current = next; onBlocksChange(next)
-    }
+    const continuation = pending.appendContinuation ? createNoteBlock(uid()) : null
+    const next = replaceNoteBlock(blocksRef.current, pending.blockId, continuation ? [...replacements, continuation] : replacements)
+    blocksRef.current = next; onBlocksChange(next)
+    if (continuation) focusBlock(continuation.id)
     const initialUploads = Object.fromEntries(selected.map((item) => [item.blockId, { state: 'uploading' as const, progress: 0, previewUrl: item.kind === 'image' ? URL.createObjectURL(item.file) : undefined }]))
     const previousPreview = uploadsRef.current[pending.blockId]?.previewUrl; if (previousPreview) URL.revokeObjectURL(previousPreview)
     setUploads((current) => ({ ...current, ...initialUploads }))
@@ -85,11 +93,11 @@ export function NoteEditor({ tripId, pageId, userId, blocks, onBlocksChange, onA
     }
   }
   const removeBlock = useCallback((block: NoteBlock) => { if (block.attachmentId) { uploadControllersRef.current.get(block.attachmentId)?.abort(); const previewUrl = uploads[block.id]?.previewUrl; if (previewUrl) URL.revokeObjectURL(previewUrl); setUploads((current) => { const next = { ...current }; delete next[block.id]; return next }); onDeleteAttachment(block) } }, [onDeleteAttachment, uploads])
-  const media = useCallback((block: NoteBlock): ReactNode => ['image', 'file'].includes(block.type) ? <AttachmentBlock tripId={tripId} block={block} upload={uploads[block.id]} onPick={() => { const attachmentId = block.attachmentId || uid(); requestPick({ blockId: block.id, attachmentId, kind: block.attachmentKind || (block.type === 'image' ? 'image' : 'file') }) }} /> : undefined, [requestPick, tripId, uploads])
+  const media = useCallback((block: NoteBlock): ReactNode => ['image', 'file'].includes(block.type) ? <AttachmentBlock tripId={tripId} block={block} upload={uploads[block.id]} onPick={() => { const attachmentId = block.attachmentId || uid(); requestPick({ blockId: block.id, attachmentId, kind: block.attachmentKind || (block.type === 'image' ? 'image' : 'file'), appendContinuation: false }) }} /> : undefined, [requestPick, tripId, uploads])
   return <div className="notion-editor"><EditorList blocks={blocks} level={0} onBlocksChange={onBlocksChange} onAction={onAction} onRemoveBlock={removeBlock} renderMedia={media} activeId={activeId} setActiveId={setActiveId} slash={slash} setSlash={setSlash} registerInput={registerInput} focusBlock={focusBlock} chooseCommand={chooseCommand} /><button type="button" className="note-inline-add" onClick={() => { const block = createNoteBlock(uid(), 'paragraph', '/'); onBlocksChange([...blocks, block]); setSlash({ blockId: block.id, query: '', selected: 0 }); focusBlock(block.id) }}><Plus size={16} /> 블록 추가</button><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/*,.heic,.heif" multiple onChange={(event) => void chooseFile(event)} /><input ref={pdfInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" multiple onChange={(event) => void chooseFile(event)} /><input ref={fileInputRef} className="visually-hidden" type="file" multiple onChange={(event) => void chooseFile(event)} /><input ref={folderInputRef} className="visually-hidden" type="file" multiple onChange={(event) => void chooseFile(event)} /></div>
 }
 
-function EditorList({ blocks, level, onBlocksChange, onAction, onRemoveBlock, renderMedia, activeId, setActiveId, slash, setSlash, registerInput, focusBlock, chooseCommand }: { blocks: NoteBlock[]; level: number; onBlocksChange: (blocks: NoteBlock[]) => void; onAction: (target: ActionTarget) => void; onRemoveBlock: (block: NoteBlock) => void; renderMedia: (block: NoteBlock) => ReactNode; activeId: string | null; setActiveId: Dispatch<SetStateAction<string | null>>; slash: SlashState | null; setSlash: (state: SlashState | null) => void; registerInput: (id: string, node: HTMLTextAreaElement | null) => void; focusBlock: (id: string, caret?: number) => void; chooseCommand: (command: NoteCommand, blocks: NoteBlock[], index: number, commit: (next: NoteBlock[]) => void) => void }) {
+function EditorList({ blocks, level, onBlocksChange, onAction, onRemoveBlock, renderMedia, activeId, setActiveId, slash, setSlash, registerInput, focusBlock, chooseCommand }: { blocks: NoteBlock[]; level: number; onBlocksChange: (blocks: NoteBlock[]) => void; onAction: (target: NoteActionTarget) => void; onRemoveBlock: (block: NoteBlock) => void; renderMedia: (block: NoteBlock) => ReactNode; activeId: string | null; setActiveId: Dispatch<SetStateAction<string | null>>; slash: SlashState | null; setSlash: (state: SlashState | null) => void; registerInput: (id: string, node: HTMLTextAreaElement | null) => void; focusBlock: (id: string, caret?: number) => void; chooseCommand: (command: NoteCommand, blocks: NoteBlock[], index: number, commit: (next: NoteBlock[]) => void) => void }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }), useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 7 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }))
   const commit = (next: NoteBlock[]) => onBlocksChange(normalizeNoteBlocks(next, uid))
   const removeAt = (index: number) => {
@@ -103,7 +111,7 @@ function EditorList({ blocks, level, onBlocksChange, onAction, onRemoveBlock, re
   return <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}><SortableContext items={blocks.map((block) => block.id)} strategy={verticalListSortingStrategy}><div className={`editor-blocks ${level ? 'editor-blocks--nested' : ''}`}>{blocks.map((block, index) => <SortableBlock key={block.id} block={block} index={index} number={block.type === 'numbered' ? consecutiveNumber(blocks, index) : undefined} level={level} blocks={blocks} commit={commit} updateAt={updateAt} removeAt={removeAt} onAction={onAction} onRemoveBlock={onRemoveBlock} renderMedia={renderMedia} activeId={activeId} setActiveId={setActiveId} slash={slash} setSlash={setSlash} registerInput={registerInput} focusBlock={focusBlock} chooseCommand={chooseCommand} />)}</div></SortableContext></DndContext>
 }
 
-function SortableBlock({ block, index, number, level, blocks, commit, updateAt, removeAt, onAction, onRemoveBlock, renderMedia, activeId, setActiveId, slash, setSlash, registerInput, focusBlock, chooseCommand }: { block: NoteBlock; index: number; number?: number; level: number; blocks: NoteBlock[]; commit: (blocks: NoteBlock[]) => void; updateAt: (index: number, changes: Partial<NoteBlock>) => void; removeAt: (index: number) => void; onAction: (target: ActionTarget) => void; onRemoveBlock: (block: NoteBlock) => void; renderMedia: (block: NoteBlock) => ReactNode; activeId: string | null; setActiveId: Dispatch<SetStateAction<string | null>>; slash: SlashState | null; setSlash: (state: SlashState | null) => void; registerInput: (id: string, node: HTMLTextAreaElement | null) => void; focusBlock: (id: string, caret?: number) => void; chooseCommand: (command: NoteCommand, blocks: NoteBlock[], index: number, commit: (next: NoteBlock[]) => void) => void }) {
+function SortableBlock({ block, index, number, level, blocks, commit, updateAt, removeAt, onAction, onRemoveBlock, renderMedia, activeId, setActiveId, slash, setSlash, registerInput, focusBlock, chooseCommand }: { block: NoteBlock; index: number; number?: number; level: number; blocks: NoteBlock[]; commit: (blocks: NoteBlock[]) => void; updateAt: (index: number, changes: Partial<NoteBlock>) => void; removeAt: (index: number) => void; onAction: (target: NoteActionTarget) => void; onRemoveBlock: (block: NoteBlock) => void; renderMedia: (block: NoteBlock) => ReactNode; activeId: string | null; setActiveId: Dispatch<SetStateAction<string | null>>; slash: SlashState | null; setSlash: (state: SlashState | null) => void; registerInput: (id: string, node: HTMLTextAreaElement | null) => void; focusBlock: (id: string, caret?: number) => void; chooseCommand: (command: NoteCommand, blocks: NoteBlock[], index: number, commit: (next: NoteBlock[]) => void) => void }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: block.id })
   const style = { transform: CSS.Transform.toString(transform), transition }; const dragHandleProps = { ...attributes, ...listeners } as ButtonHTMLAttributes<HTMLButtonElement>
   const applyDivider = () => { const paragraph = createNoteBlock(uid()); commit([...blocks.slice(0, index), { ...block, type: 'divider' as BlockType, content: '' }, paragraph, ...blocks.slice(index + 1)]); setSlash(null); focusBlock(paragraph.id) }
@@ -139,7 +147,8 @@ function SortableBlock({ block, index, number, level, blocks, commit, updateAt, 
     const opening = Boolean(block.collapsed); const children = block.children?.length ? block.children : [createNoteBlock(uid())]
     updateAt(index, { collapsed: !block.collapsed, children }); if (opening) focusBlock(children[0].id)
   }
-  return <div ref={setNodeRef} className={`sortable-note-block ${isDragging ? 'is-dragging' : ''}`} style={style}><BlockEditor block={block} number={number} active={activeId === block.id} inputRef={(node) => registerInput(block.id, node)} handleRef={setActivatorNodeRef} dragHandleProps={dragHandleProps} customContent={renderMedia(block)} onFocus={() => setActiveId(block.id)} onBlur={() => setTimeout(() => setActiveId((current) => current === block.id ? null : current), 0)} onChange={handleChange} onKeyDown={handleKeyDown} onCheckedChange={(checked) => updateAt(index, { checked })} onToggle={toggle} onAction={() => onAction({ block, remove: () => removeAt(index) })} />
+  const moveTo = (nextIndex: number) => { if (nextIndex < 0 || nextIndex >= blocks.length || nextIndex === index) return; commit(arrayMove(blocks, index, nextIndex)) }
+  return <div ref={setNodeRef} className={`sortable-note-block ${isDragging ? 'is-dragging' : ''}`} style={style}><BlockEditor block={block} number={number} active={activeId === block.id} inputRef={(node) => registerInput(block.id, node)} handleRef={setActivatorNodeRef} dragHandleProps={dragHandleProps} customContent={renderMedia(block)} onFocus={() => setActiveId(block.id)} onBlur={() => setTimeout(() => setActiveId((current) => current === block.id ? null : current), 0)} onChange={handleChange} onKeyDown={handleKeyDown} onCheckedChange={(checked) => updateAt(index, { checked })} onToggle={toggle} onAction={() => onAction({ block, remove: () => removeAt(index), moveUp: () => moveTo(index - 1), moveDown: () => moveTo(index + 1), canMoveUp: index > 0, canMoveDown: index < blocks.length - 1 })} />
     {slash?.blockId === block.id && <SlashCommandMenu query={slash.query} selected={slash.selected} onChoose={(command) => chooseCommand(command, blocks, index, commit)} onClose={() => setSlash(null)} />}
     {block.type === 'toggle' && !block.collapsed && <EditorList blocks={block.children?.length ? block.children : [createNoteBlock(uid())]} level={level + 1} onBlocksChange={(children) => updateAt(index, { children })} onAction={onAction} onRemoveBlock={onRemoveBlock} renderMedia={renderMedia} activeId={activeId} setActiveId={setActiveId} slash={slash} setSlash={setSlash} registerInput={registerInput} focusBlock={focusBlock} chooseCommand={chooseCommand} />}
   </div>

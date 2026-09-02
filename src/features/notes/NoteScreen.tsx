@@ -1,4 +1,4 @@
-import { ChevronLeft, Copy, FileText, MapPin, MoreHorizontal, Plus, Send, Trash2, Vote } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, Copy, FileText, MapPin, MoreHorizontal, Plus, Send, Trash2, Vote } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { Sheet } from '../../components/Sheet'
@@ -7,7 +7,7 @@ import { db } from '../../lib/firebase'
 import { uid } from '../../lib/utils'
 import { collectAttachmentIds, deleteAttachment } from '../../services/noteAttachments'
 import type { NoteBlock, NotePage, Trip } from '../../types'
-import { NoteEditor } from './NoteEditor'
+import { NoteEditor, type NoteActionTarget } from './NoteEditor'
 
 const proposalOptions = () => [
   { id: uid(), label: '좋아요', voterIds: [] },
@@ -20,7 +20,7 @@ export function NoteScreen() {
   const { data, profile, signedIn, addNotePage, ensureInitialNotePage, updateNotePage, deleteNotePage, duplicateNotePage, sendMessage, createProposal } = useApp()
   const pages = useMemo(() => data.notes.filter((page) => page.tripId === trip.id), [data.notes, trip.id])
   const activePage = pages.find((page) => page.id === pageId)
-  const [menuPage, setMenuPage] = useState<NotePage | null>(null); const [actionTarget, setActionTarget] = useState<{ block: NoteBlock; remove: () => void } | null>(null)
+  const [menuPage, setMenuPage] = useState<NotePage | null>(null); const [actionTarget, setActionTarget] = useState<NoteActionTarget | null>(null)
   const initializingRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -59,7 +59,9 @@ export function NoteScreen() {
     <div className="editor-topbar"><button className="icon-button" onClick={() => navigate(`/trip/${trip.id}/note`)}><ChevronLeft size={22} /></button><span>NOTE</span><button className="icon-button" onClick={() => setMenuPage(activePage)}><MoreHorizontal size={21} /></button></div>
     <input className="page-title-input" aria-label="페이지 제목" value={activePage.title} onChange={(event) => updateNotePage(activePage.id, { title: event.target.value })} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); document.querySelector<HTMLTextAreaElement>('.editor-blocks textarea')?.focus() } }} placeholder="제목 없음" />
     <NoteEditor tripId={trip.id} pageId={activePage.id} userId={profile.id} blocks={activePage.blocks} onBlocksChange={(blocks) => updateNotePage(activePage.id, { blocks })} onAction={setActionTarget} onDeleteAttachment={deleteBlockAttachment} />
-    <Sheet open={Boolean(actionTarget)} title="블록 옵션" onClose={() => setActionTarget(null)}>{actionTarget && <div className="action-list">
+    <Sheet open={Boolean(actionTarget)} title="블록 옵션" onClose={() => setActionTarget(null)} tall>{actionTarget && <div className="action-list">
+      <button disabled={!actionTarget.canMoveUp} onClick={() => { actionTarget.moveUp(); setActionTarget(null) }}><ArrowUp size={18} /> 위로 이동</button>
+      <button disabled={!actionTarget.canMoveDown} onClick={() => { actionTarget.moveDown(); setActionTarget(null) }}><ArrowDown size={18} /> 아래로 이동</button>
       <button onClick={() => { void sendMessage(trip.id, actionTarget.block.content, 'NOTE_SHARE', { referencedNotePageId: activePage.id }).catch(() => {}); setActionTarget(null) }}><Send size={18} /> 채팅에 공유</button>
       <button onClick={() => { void createProposal({ tripId: trip.id, title: actionTarget.block.content || activePage.title, description: '이 아이디어를 여행 계획에 반영할까요?', referencedNotePageId: activePage.id, proposedPlace: actionTarget.block.type === 'location' ? { name: actionTarget.block.content } : undefined, options: proposalOptions() }).catch(() => {}); setActionTarget(null) }}><Vote size={18} /> 제안하기</button>
       {actionTarget.block.type === 'location' && <button onClick={() => navigate(`/trip/${trip.id}/map`, { state: { placeName: actionTarget.block.content } })}><MapPin size={18} /> 지도에 추가</button>}

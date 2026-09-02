@@ -3,6 +3,7 @@ import type { BlockType } from '../../types'
 export interface NoteCommand { id: string; type: BlockType; label: string; hint: string; aliases: string[]; group: '기본' | '미디어' | 'T Log'; picker?: 'image' | 'file' | 'pdf' | 'folder' }
 
 export const noteCommands: NoteCommand[] = [
+  { id: 'toggle', type: 'toggle', label: '토글', hint: '접을 수 있는 내용', aliases: ['toggle', '접기'], group: '기본' },
   { id: 'paragraph', type: 'paragraph', label: '텍스트', hint: '기본 텍스트 블록', aliases: ['text', 'paragraph', '본문'], group: '기본' },
   { id: 'heading1', type: 'heading1', label: '제목 1', hint: '큰 섹션 제목', aliases: ['h1', 'heading1', '제목'], group: '기본' },
   { id: 'heading2', type: 'heading2', label: '제목 2', hint: '중간 섹션 제목', aliases: ['h2', 'heading2', '제목'], group: '기본' },
@@ -10,7 +11,6 @@ export const noteCommands: NoteCommand[] = [
   { id: 'bullet', type: 'bullet', label: '글머리 목록', hint: '순서 없는 목록', aliases: ['bullet', 'bulleted', '목록'], group: '기본' },
   { id: 'numbered', type: 'numbered', label: '번호 목록', hint: '순서가 있는 목록', aliases: ['number', 'numbered', '목록'], group: '기본' },
   { id: 'todo', type: 'todo', label: '할 일', hint: '체크 가능한 항목', aliases: ['todo', 'task', '체크'], group: '기본' },
-  { id: 'toggle', type: 'toggle', label: '토글', hint: '접을 수 있는 내용', aliases: ['toggle', '접기'], group: '기본' },
   { id: 'quote', type: 'quote', label: '인용', hint: '강조할 메모', aliases: ['quote', 'callout', '콜아웃'], group: '기본' },
   { id: 'divider', type: 'divider', label: '구분선', hint: '내용 나누기', aliases: ['divider', 'line', '선'], group: '기본' },
   { id: 'image', type: 'image', label: '사진', hint: '사진 또는 스크린샷', aliases: ['image', 'photo', '이미지'], group: '미디어', picker: 'image' },

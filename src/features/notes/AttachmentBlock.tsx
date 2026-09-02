@@ -1,4 +1,4 @@
-import { AlertCircle, Download, FileText, Image as ImageIcon, LoaderCircle, RotateCcw } from 'lucide-react'
+import { AlertCircle, Download, Eye, FileText, Image as ImageIcon, LoaderCircle, RotateCcw, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { db } from '../../lib/firebase'
 import { createAttachmentBlobUrl, getAttachmentManifest, loadAttachment, revokeAttachmentBlobUrl } from '../../services/noteAttachments'
@@ -25,8 +25,32 @@ function ImageAttachment({ tripId, attachmentId, fallbackUrl }: { tripId: string
 }
 
 function FileAttachment({ tripId, attachmentId }: { tripId: string; attachmentId: string }) {
-  const [manifest, setManifest] = useState<NoteAttachment | null>(null); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const urlsRef = useRef<string[]>([])
+  const [manifest, setManifest] = useState<NoteAttachment | null>(null); const [loading, setLoading] = useState(false); const [error, setError] = useState(''); const [preview, setPreview] = useState<{ manifest: NoteAttachment; url: string; text?: string } | null>(null); const urlsRef = useRef<string[]>([])
   useEffect(() => { let disposed = false; const urls = urlsRef.current; if (db) void getAttachmentManifest(db, tripId, attachmentId).then((value) => { if (!disposed) setManifest(value) }).catch(() => { if (!disposed) setError('파일 정보를 불러오지 못했어요.') }); return () => { disposed = true; urls.forEach(revokeAttachmentBlobUrl) } }, [attachmentId, tripId])
-  const open = async () => { if (!db) return; setLoading(true); setError(''); try { const { blob } = await loadAttachment(db, tripId, attachmentId); const url = createAttachmentBlobUrl(blob); urlsRef.current.push(url); window.open(url, '_blank', 'noopener,noreferrer') } catch { setError('파일을 불러오지 못했어요. 다시 시도해 주세요.') } finally { setLoading(false) } }
-  return <div className="file-attachment"><span>{manifest?.kind === 'pdf' ? 'PDF' : <FileText size={22} />}</span><div><strong>{manifest?.fileName || '첨부 파일'}</strong><small>{manifest ? `${manifest.kind === 'pdf' ? 'PDF' : manifest.mimeType} · ${fileSize(manifest.storedSize)}` : error || '파일 정보 불러오는 중…'}</small></div><button type="button" onClick={() => void open()} disabled={loading}>{loading ? <LoaderCircle className="spin" size={17} /> : <Download size={17} />} 열기</button>{error && <em>{error}</em>}</div>
+  const open = async () => {
+    if (!db) return
+    setLoading(true); setError('')
+    try {
+      const loaded = await loadAttachment(db, tripId, attachmentId)
+      const url = createAttachmentBlobUrl(loaded.blob); urlsRef.current.push(url)
+      const canReadText = (/^text\//i.test(loaded.manifest.mimeType) || /application\/(json|xml|javascript)/i.test(loaded.manifest.mimeType)) && loaded.blob.size <= 2 * 1024 * 1024
+      setPreview({ manifest: loaded.manifest, url, text: canReadText ? await loaded.blob.text() : undefined })
+    } catch { setError('파일을 불러오지 못했어요. 다시 시도해 주세요.') } finally { setLoading(false) }
+  }
+  return <><div className="file-attachment"><span>{manifest?.kind === 'pdf' ? 'PDF' : <FileText size={22} />}</span><div><strong>{manifest?.fileName || '첨부 파일'}</strong><small>{manifest ? `${manifest.kind === 'pdf' ? 'PDF' : manifest.mimeType} · ${fileSize(manifest.storedSize)}` : error || '파일 정보 불러오는 중…'}</small></div><button type="button" onClick={() => void open()} disabled={loading}>{loading ? <LoaderCircle className="spin" size={17} /> : <Eye size={17} />} 미리보기</button>{error && <em>{error}</em>}</div>{preview && <FilePreview preview={preview} onClose={() => setPreview(null)} />}</>
+}
+
+function FilePreview({ preview, onClose }: { preview: { manifest: NoteAttachment; url: string; text?: string }; onClose: () => void }) {
+  const { manifest, url, text } = preview
+  const isImage = manifest.mimeType.startsWith('image/')
+  const isPdf = manifest.kind === 'pdf' || manifest.mimeType === 'application/pdf' || /\.pdf$/i.test(manifest.fileName)
+  const isAudio = manifest.mimeType.startsWith('audio/')
+  const supported = isImage || isPdf || isAudio || text !== undefined
+  return <div className="file-preview" role="dialog" aria-modal="true" aria-label={`${manifest.fileName} 미리보기`}>
+    <header><div><strong>{manifest.fileName}</strong><small>{fileSize(manifest.storedSize)}</small></div><button type="button" onClick={onClose} aria-label="닫기"><X size={22} /></button></header>
+    <div className="file-preview__body">
+      {isImage ? <img src={url} alt={manifest.fileName} /> : isPdf ? <iframe src={url} title={`${manifest.fileName} 미리보기`} /> : isAudio ? <audio src={url} controls /> : text !== undefined ? <pre>{text}</pre> : <div className="file-preview__unsupported"><FileText size={42} /><strong>이 형식은 화면에서 바로 볼 수 없어요.</strong><span>아래 저장 버튼으로 파일을 확인해 주세요.</span></div>}
+    </div>
+    <footer><a href={url} download={manifest.fileName}><Download size={18} /> 파일 저장</a>{supported && <span>앱 안에서 미리보는 중</span>}</footer>
+  </div>
 }
