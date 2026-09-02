@@ -1,6 +1,6 @@
 # T Log Google Maps URL resolver
 
-This Worker expands only Google Maps short links. It is not a general-purpose proxy: input and every redirect target are allowlisted, redirects and execution time are bounded, and CORS is limited to the T Log GitHub Pages origin plus local development origins.
+This Worker expands only Google Maps short links. It is not a general-purpose proxy: input and the expanded result are allowlisted, execution time is bounded, and CORS is limited to the T Log GitHub Pages origin plus local development origins. It reads the first Google redirect with `HEAD`, retries temporary failures, and caches successful resolutions to avoid Google rate limits.
 
 ```bash
 npm install

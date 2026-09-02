@@ -91,12 +91,16 @@ publicTrips/{publicShareId}  # 일정 전용 공개 스냅샷
 trips/{tripId}
   members/{userId}
   notes/{noteId}
+  attachments/{attachmentId}
+    chunks/{chunkId}
   places/{placeId}
   segments/{segmentId}
   messages/{messageId}
   proposals/{proposalId}
     votes/{userId}
 ```
+
+사진·파일·폴더 첨부가 `Missing or insufficient permissions`로 실패하면 배포된 규칙이 오래된 상태입니다. 저장소의 최신 [`firestore.rules`](firestore.rules)를 Firebase Console에 게시하거나 `npx firebase-tools deploy --only firestore:rules`를 다시 실행해야 합니다.
 
 ## GitHub Actions에 Firebase 값 전달
 
