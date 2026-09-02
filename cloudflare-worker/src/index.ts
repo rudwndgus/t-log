@@ -179,6 +179,32 @@ async function expandShortUrl(input) {
     for (let attempt = 0; attempt < RESOLVE_ATTEMPTS; attempt += 1) {
       try {
         const response = await fetch(input.toString(), {
+          method: 'HEAD',
+          redirect: 'manual',
+          signal: controller.signal,
+          headers: {
+            Accept: 'text/html,application/xhtml+xml',
+            'Accept-Language': 'ko,en;q=0.8',
+            'User-Agent': 'Mozilla/5.0 (compatible; TLogMapsResolver/1.0)',
+          },
+        });
+        const location = response.headers.get('Location');
+        if (response.status >= 300 && response.status < 400 && location) {
+          const expanded = new URL(location, input);
+          if (isGoogleMapsUrl(expanded)) return expanded.toString();
+        }
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+      }
+
+      if (attempt + 1 < RESOLVE_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, 120 * (attempt + 1)));
+      }
+    }
+
+    for (let attempt = 0; attempt < RESOLVE_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await fetch(input.toString(), {
           method: 'GET',
           redirect: 'follow',
           signal: controller.signal,
