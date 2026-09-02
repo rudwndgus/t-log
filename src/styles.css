@@ -84,6 +84,59 @@ input, textarea, select { font-size: 16px; }
 .note-initializing { min-height: 55dvh; }
 @media (pointer: coarse) { .slash-command > button[role="option"] { min-height: 52px; } }
 
+/* Keep mobile app chrome stationary and scroll only the active content pane. */
+.trip-shell,
+.public-trip-shell {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  overscroll-behavior: none;
+}
+.home-shell,
+.form-shell {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
+}
+.trip-header,
+.public-trip-header,
+.home-header,
+.simple-header {
+  z-index: 40;
+  background: rgba(248, 247, 243, .96);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+.home-header,
+.simple-header {
+  position: sticky;
+  top: 0;
+}
+.trip-content,
+.public-trip-main,
+.note-home,
+.note-editor,
+.list-stage,
+.message-scroll,
+.public-list {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.note-editor .editor-topbar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  border-bottom: 1px solid var(--line);
+  background: rgba(248, 247, 243, .96);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
 .trip-swipe { position: relative; overflow: hidden; border-radius: 16px; background: var(--soft); }.trip-swipe__content { position: relative; z-index: 2; transition: transform .2s ease; touch-action: pan-y; user-select: none; }.trip-swipe__content .trip-card { width: 100%; }.trip-swipe__action { position: absolute; z-index: 1; top: 0; bottom: 0; width: 82px; display: grid; place-content: center; justify-items: center; gap: 5px; color: white; font-size: 11px; font-weight: 700; }.trip-swipe__action--share { left: 0; background: var(--accent); }.trip-swipe__action--delete { right: 0; background: var(--danger); }
 .profile-field { margin-top: 10px; }.profile-signout { margin: 18px 20px 24px; padding-top: 16px; border-top: 1px solid var(--line); }.destructive-confirm, .public-share { padding: 8px 20px 24px; text-align: center; }.destructive-confirm > span, .public-share__icon { width: 48px; height: 48px; margin: 0 auto 12px; display: grid; place-items: center; color: var(--danger); border-radius: 50%; background: #f8e8e6; }.public-share__icon { color: var(--accent); background: var(--accent-soft); }.destructive-confirm h3, .public-share h3 { margin: 0 0 7px; font-size: 18px; }.destructive-confirm > p, .public-share > p { margin: 0 0 18px; color: var(--muted); font-size: 12px; line-height: 1.55; }.destructive-confirm .button + .button { margin-top: 6px; }.public-share { text-align: left; }.public-share > h3, .public-share > p { text-align: center; }.public-share .field { margin: 0 0 12px; }.public-share .button--ghost { margin-top: 6px; }.share-loading { min-height: 90px; display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .public-trip-shell { height: 100dvh; display: flex; flex-direction: column; }.public-trip-header { flex: 0 0 auto; padding: max(22px, calc(env(safe-area-inset-top) + 14px)) 20px 16px; display: flex; align-items: center; gap: 13px; border-bottom: 1px solid var(--line); background: var(--white); }.public-trip-header .big-emoji { flex: 0 0 48px; width: 48px; height: 48px; margin: 0; display: grid; place-items: center; border-radius: 14px; background: var(--soft); font-size: 24px; }.public-trip-header > div { min-width: 0; }.public-trip-header small { color: var(--accent); font-size: 8px; font-weight: 800; letter-spacing: .13em; }.public-trip-header h1 { margin: 3px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 21px; letter-spacing: -.03em; }.public-trip-header p { margin: 0; color: var(--muted); font-size: 10px; }.public-trip-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }.public-map-stage { position: relative; flex: 1; min-height: 300px; }.public-list { flex: 1; padding: 13px 16px; overflow-y: auto; }.public-list > button { width: 100%; min-height: 72px; padding: 10px 8px; display: grid; grid-template-columns: 30px 1fr 20px; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); background: transparent; text-align: left; }.public-list > button > span { width: 28px; height: 28px; display: grid; place-items: center; color: white; border-radius: 50%; background: var(--ink); font-size: 11px; font-weight: 700; }.public-list > button > div { min-width: 0; display: grid; gap: 2px; }.public-list time { color: var(--accent); font-size: 9px; font-weight: 700; }.public-list strong { font-size: 14px; }.public-list small { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }.public-empty { height: 100%; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--muted); font-size: 12px; }.public-trip-footer { flex: 0 0 auto; min-height: calc(54px + env(safe-area-inset-bottom)); padding: 10px 18px calc(10px + env(safe-area-inset-bottom)); display: flex; align-items: center; justify-content: center; gap: 8px; border-top: 1px solid var(--line); background: var(--white); font-size: 10px; }.public-trip-footer strong { color: var(--accent); }.public-trip-footer span { color: var(--muted); }.public-trip-state { display: grid; place-content: center; justify-items: center; gap: 9px; padding: 30px; text-align: center; }.public-trip-state h1 { margin: 5px 0 0; font-size: 20px; }.public-trip-state p { max-width: 280px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }

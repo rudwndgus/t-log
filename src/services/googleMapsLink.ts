@@ -4,29 +4,47 @@ export type GoogleMapsParseFailure = 'invalid' | 'short_link' | 'coordinates_mis
 export type GoogleMapsParseResult = { ok: true; place: ParsedGoogleMapsPlace } | { ok: false; reason: GoogleMapsParseFailure; fallbackQuery?: string }
 export type GoogleMapsUrlResolver = (url: string) => Promise<string | ResolvedGoogleMapsUrl | null>
 
-const coordinatePatterns = [/@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/, /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/, /[?&](?:q|query|ll)=(-?\d{1,3}(?:\.\d+)?)(?:%2C|,)(-?\d{1,3}(?:\.\d+)?)/i]
+const coordinatePatterns = [
+  { pattern: /!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/, latitudeIndex: 1, longitudeIndex: 2 },
+  { pattern: /!2d(-?\d{1,3}(?:\.\d+)?)!3d(-?\d{1,3}(?:\.\d+)?)/, latitudeIndex: 2, longitudeIndex: 1 },
+  { pattern: /@(-?\d{1,3}(?:\.\d+)?),(-?\d{1,3}(?:\.\d+)?)/, latitudeIndex: 1, longitudeIndex: 2 },
+  { pattern: /[?&](?:q|query|ll|destination|daddr|center)=(?:loc:)?\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/i, latitudeIndex: 1, longitudeIndex: 2 },
+]
 const validCoordinates = (latitude: number, longitude: number) => Number.isFinite(latitude) && Number.isFinite(longitude) && Math.abs(latitude) <= 90 && Math.abs(longitude) <= 180
 const isExpandedGoogleHost = (host: string) => /^([a-z0-9-]+\.)*google\.(com|[a-z]{2,3}|com\.[a-z]{2}|co\.[a-z]{2})$/i.test(host)
 const isShortGoogleUrl = (url: URL) => url.hostname === 'maps.app.goo.gl' || (url.hostname === 'goo.gl' && url.pathname.startsWith('/maps/'))
 const safeDecode = (value: string) => { try { return decodeURIComponent(value.replace(/\+/g, ' ')) } catch { return value.replace(/\+/g, ' ') } }
+const isExpandedGoogleMapsUrl = (url: URL) => isExpandedGoogleHost(url.hostname.toLowerCase()) && (url.hostname.toLowerCase().startsWith('maps.') || /^\/(?:maps|place|search)(?:\/|$)/i.test(url.pathname))
+const isCoordinateQuery = (value: string) => /^(?:loc:)?\s*-?\d{1,3}(?:\.\d+)?\s*,\s*-?\d{1,3}(?:\.\d+)?(?:\s.*)?$/i.test(value)
+const textQueryFromUrl = (url: URL) => {
+  for (const key of ['q', 'query', 'destination', 'daddr', 'address']) {
+    const value = url.searchParams.get(key)?.trim()
+    if (value && !isCoordinateQuery(value)) return value
+  }
+
+  const pathMatch = url.pathname.match(/\/(?:maps\/)?(?:place|search)\/([^/]+)/i)
+  if (pathMatch?.[1]) return safeDecode(pathMatch[1])
+
+  const directionMatch = url.pathname.match(/\/(?:maps\/)?dir\/(?:[^/]+\/)*([^/@]+)(?:\/|$)/i)
+  return directionMatch?.[1] ? safeDecode(directionMatch[1]) : undefined
+}
 
 export function parseGoogleMapsUrl(input: string): GoogleMapsParseResult {
   const raw = input.trim(); let parsed: URL
   try { parsed = new URL(raw) } catch { return { ok: false, reason: 'invalid' } }
-  const host = parsed.hostname.toLowerCase()
   if (isShortGoogleUrl(parsed)) return { ok: false, reason: 'short_link' }
-  if (!isExpandedGoogleHost(host)) return { ok: false, reason: 'invalid' }
+  if (!isExpandedGoogleMapsUrl(parsed)) return { ok: false, reason: 'invalid' }
   const decoded = safeDecode(raw)
-  for (const pattern of coordinatePatterns) {
+  for (const { pattern, latitudeIndex, longitudeIndex } of coordinatePatterns) {
     const match = decoded.match(pattern); if (!match) continue
-    const latitude = Number(match[1]); const longitude = Number(match[2]); if (!validCoordinates(latitude, longitude)) continue
+    const latitude = Number(match[latitudeIndex]); const longitude = Number(match[longitudeIndex]); if (!validCoordinates(latitude, longitude)) continue
     const placeMatch = parsed.pathname.match(/\/maps\/place\/([^/]+)/i) || parsed.pathname.match(/\/place\/([^/]+)/i)
-    const queryName = parsed.searchParams.get('q') || parsed.searchParams.get('query')
+    const queryName = textQueryFromUrl(parsed)
     const name = placeMatch ? safeDecode(placeMatch[1]) : queryName && !/^[-\d.,\s]+$/.test(queryName) ? queryName : 'Google Maps location'
     return { ok: true, place: { latitude, longitude, name, googleMapsUrl: raw, source: 'google_maps' } }
   }
-  const fallbackQuery = parsed.searchParams.get('q') || parsed.searchParams.get('query') || undefined
-  return { ok: false, reason: 'coordinates_missing', ...(fallbackQuery && !/^[-\d.,\s]+$/.test(fallbackQuery) ? { fallbackQuery } : {}) }
+  const fallbackQuery = textQueryFromUrl(parsed)
+  return { ok: false, reason: 'coordinates_missing', ...(fallbackQuery ? { fallbackQuery } : {}) }
 }
 
 export function googleMapsSearchFallbacks(query: string) {
@@ -52,7 +70,7 @@ export async function resolveGoogleMapsShortUrl(url: string): Promise<ResolvedGo
 }
 
 export async function parseOrResolveGoogleMapsUrl(input: string, resolver: GoogleMapsUrlResolver = resolveGoogleMapsShortUrl): Promise<GoogleMapsParseResult> {
-  const direct = parseGoogleMapsUrl(input); if (direct.ok || direct.reason !== 'short_link') return direct
+  const direct = parseGoogleMapsUrl(input); if (direct.ok || (direct.reason !== 'short_link' && direct.reason !== 'coordinates_missing')) return direct
   try {
     const resolution = await resolver(input.trim()); if (!resolution) return { ok: false, reason: 'resolve_failed' }
     if (typeof resolution !== 'string' && resolution.location) return { ok: true, place: { latitude: resolution.location.latitude, longitude: resolution.location.longitude, name: resolution.location.name || 'Google Maps location', googleMapsUrl: input.trim(), source: 'google_maps' } }

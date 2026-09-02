@@ -1,7 +1,7 @@
-// @ts-nocheck — kept as dashboard-pasteable JavaScript even though Wrangler uses a .ts entry.
+// Kept as dashboard-pasteable JavaScript even though Wrangler uses a .ts entry.
 const PRODUCTION_ORIGIN = 'https://rudwndgus.github.io';
-const MAX_REDIRECTS = 5;
-const TIMEOUT_MS = 6000;
+const MAX_REDIRECTS = 8;
+const TIMEOUT_MS = 10000;
 
 const isAllowedOrigin = (origin) =>
   origin === PRODUCTION_ORIGIN ||
@@ -66,7 +66,17 @@ const searchFallbacks = (query) => {
 
 async function geocodeExpandedUrl(expandedUrl) {
   const expanded = new URL(expandedUrl);
-  const query = expanded.searchParams.get('q') || expanded.searchParams.get('query');
+  const pathMatch = expanded.pathname.match(/\/(?:place|search)\/([^/]+)/i);
+  const pathQuery = pathMatch
+    ? decodeURIComponent(pathMatch[1].replace(/\+/g, ' '))
+    : '';
+  const query =
+    expanded.searchParams.get('q') ||
+    expanded.searchParams.get('query') ||
+    expanded.searchParams.get('destination') ||
+    expanded.searchParams.get('daddr') ||
+    expanded.searchParams.get('address') ||
+    pathQuery;
 
   if (!query || /^[-\d.,\s]+$/.test(query)) return null;
 
@@ -76,39 +86,86 @@ async function geocodeExpandedUrl(expandedUrl) {
 
   try {
     for (const candidate of fallback.queries) {
-      const endpoint = new URL('https://nominatim.openstreetmap.org/search');
-      endpoint.search = new URLSearchParams({
-        q: candidate,
-        format: 'jsonv2',
-        limit: '1',
-        addressdetails: '1',
-        'accept-language': 'ko,en',
-      }).toString();
+      try {
+        const endpoint = new URL('https://nominatim.openstreetmap.org/search');
+        endpoint.search = new URLSearchParams({
+          q: candidate,
+          format: 'jsonv2',
+          limit: '1',
+          addressdetails: '1',
+          'accept-language': 'ko,en',
+        }).toString();
 
-      const response = await fetch(endpoint, {
-        signal: controller.signal,
-        headers: {
-          Accept: 'application/json',
-          'User-Agent': 'TLog/1.0 (https://rudwndgus.github.io/t-log/)',
-        },
-      });
+        const response = await fetch(endpoint, {
+          signal: controller.signal,
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'TLog/1.0 (https://rudwndgus.github.io/t-log/)',
+          },
+        });
 
-      if (!response.ok) continue;
+        if (response.ok) {
+          const rows = await response.json();
+          const row = rows[0];
+          const latitude = Number(row?.lat);
+          const longitude = Number(row?.lon);
 
-      const rows = await response.json();
-      const row = rows[0];
-      if (!row) continue;
+          if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+            return {
+              latitude,
+              longitude,
+              name: fallback.name || row.name || candidate,
+              address: row.display_name || '',
+            };
+          }
+        }
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+      }
 
-      const latitude = Number(row.lat);
-      const longitude = Number(row.lon);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+      try {
+        const endpoint = new URL('https://photon.komoot.io/api/');
+        endpoint.search = new URLSearchParams({
+          q: candidate,
+          limit: '1',
+          lang: 'en',
+        }).toString();
 
-      return {
-        latitude,
-        longitude,
-        name: fallback.name || row.name || candidate,
-        address: row.display_name || '',
-      };
+        const response = await fetch(endpoint, {
+          signal: controller.signal,
+          headers: {
+            Accept: 'application/json',
+            'User-Agent': 'TLog/1.0 (https://rudwndgus.github.io/t-log/)',
+          },
+        });
+
+        if (!response.ok) continue;
+
+        const payload = await response.json();
+        const feature = payload.features?.[0];
+        const longitude = Number(feature?.geometry?.coordinates?.[0]);
+        const latitude = Number(feature?.geometry?.coordinates?.[1]);
+
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+
+        const properties = feature.properties || {};
+        const address = [
+          properties.street,
+          properties.housenumber,
+          properties.city,
+          properties.state,
+          properties.country,
+        ].filter(Boolean).join(', ');
+
+        return {
+          latitude,
+          longitude,
+          name: fallback.name || properties.name || candidate,
+          address,
+        };
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+      }
     }
 
     return null;
@@ -216,7 +273,7 @@ export default {
       );
     }
 
-    if (!isShortMapsUrl(shortUrl)) {
+    if (!isShortMapsUrl(shortUrl) && !isGoogleMapsUrl(shortUrl)) {
       return json(
         origin,
         { success: false, error: 'URL_NOT_ALLOWED' },
@@ -225,7 +282,9 @@ export default {
     }
 
     try {
-      const expandedUrl = await expandShortUrl(shortUrl);
+      const expandedUrl = isShortMapsUrl(shortUrl)
+        ? await expandShortUrl(shortUrl)
+        : shortUrl.toString();
       const location = await geocodeExpandedUrl(expandedUrl);
 
       return json(origin, {
