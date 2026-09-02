@@ -75,6 +75,7 @@ test('production attachment survives reload and previews in isolated WebKit', as
     const isolated = await webkitContext.newPage()
     await signIn(isolated)
     await isolated.getByText(tripName).click()
+    await isolated.locator('.page-row').first().click()
     await expect(isolated.getByText('firestore-preview.txt')).toBeVisible({ timeout: 30_000 })
     await isolated.getByRole('button', { name: '미리보기' }).click()
     await expect(isolated.getByRole('dialog', { name: 'firestore-preview.txt 미리보기' })).toContainText('T Log Firestore preview proof')
