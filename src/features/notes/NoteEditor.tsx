@@ -11,15 +11,25 @@ import { AttachmentBlock, type AttachmentUploadState } from './AttachmentBlock'
 import { BlockEditor } from './BlockEditor'
 import { filterNoteCommands, type NoteCommand } from './noteCommands'
 import { SlashCommandMenu } from './SlashCommandMenu'
-import { consecutiveNumber, continuationType, createNoteBlock, isTextBlock, markdownBlockType, normalizeNoteBlocks, slashQuery } from './noteEditorUtils'
+import { consecutiveNumber, continuationType, createNoteBlock, isTextBlock, markdownBlockType, normalizeNoteBlocks, replaceNoteBlock, slashQuery } from './noteEditorUtils'
 
 interface ActionTarget { block: NoteBlock; remove: () => void }
 interface SlashState { blockId: string; query: string; selected: number }
-interface PendingPick { blockId: string; attachmentId: string; kind: 'image' | 'pdf' | 'file' }
+type AttachmentKind = 'image' | 'pdf' | 'file'
+type PickerKind = AttachmentKind | 'folder'
+interface PendingPick { blockId: string; attachmentId: string; kind: PickerKind }
+
+const uploadErrorMessage = (error: unknown) => {
+  const code = error instanceof Error ? error.message : ''
+  return code === 'FILE_TOO_LARGE' ? '파일이 너무 커요. 파일 하나당 15MB 이하로 선택해 주세요.'
+    : code === 'VIDEO_NOT_SUPPORTED' ? '동영상은 아직 첨부할 수 없어요.'
+      : code === 'UNSUPPORTED_IMAGE' || code === 'IMAGE_DECODE_FAILED' ? '이 사진 형식은 브라우저에서 읽을 수 없어요. JPG 또는 PNG로 다시 시도해 주세요.'
+        : '업로드하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.'
+}
 
 export function NoteEditor({ tripId, pageId, userId, blocks, onBlocksChange, onAction, onDeleteAttachment }: { tripId: string; pageId: string; userId: string; blocks: NoteBlock[]; onBlocksChange: (blocks: NoteBlock[]) => void; onAction: (target: ActionTarget) => void; onDeleteAttachment: (block: NoteBlock) => void }) {
-  const inputRefs = useRef(new Map<string, HTMLTextAreaElement>()); const pageRef = useRef(''); const [activeId, setActiveId] = useState<string | null>(null); const [slash, setSlash] = useState<SlashState | null>(null)
-  const imageInputRef = useRef<HTMLInputElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const pdfInputRef = useRef<HTMLInputElement>(null); const pendingPickRef = useRef<PendingPick | null>(null); const uploadControllersRef = useRef(new Map<string, AbortController>()); const [uploads, setUploads] = useState<Record<string, AttachmentUploadState>>({})
+  const inputRefs = useRef(new Map<string, HTMLTextAreaElement>()); const pageRef = useRef(''); const blocksRef = useRef(blocks); blocksRef.current = blocks; const [activeId, setActiveId] = useState<string | null>(null); const [slash, setSlash] = useState<SlashState | null>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null); const fileInputRef = useRef<HTMLInputElement>(null); const pdfInputRef = useRef<HTMLInputElement>(null); const folderInputRef = useRef<HTMLInputElement>(null); const pendingPickRef = useRef<PendingPick | null>(null); const uploadControllersRef = useRef(new Map<string, AbortController>()); const [uploads, setUploads] = useState<Record<string, AttachmentUploadState>>({})
   const uploadsRef = useRef(uploads); uploadsRef.current = uploads
   const focusBlock = useCallback((id: string, caret?: number) => { requestAnimationFrame(() => { const input = inputRefs.current.get(id); if (!input) return; input.focus(); const position = caret ?? input.value.length; input.setSelectionRange(position, position) }) }, [])
   useEffect(() => {
@@ -29,28 +39,53 @@ export function NoteEditor({ tripId, pageId, userId, blocks, onBlocksChange, onA
     focusBlock(normalized[0].id)
   }, [blocks, focusBlock, onBlocksChange, pageId])
   useEffect(() => () => { uploadControllersRef.current.forEach((controller) => controller.abort()); Object.values(uploadsRef.current).forEach((upload) => { if (upload.previewUrl) URL.revokeObjectURL(upload.previewUrl) }) }, [])
+  useEffect(() => { const input = folderInputRef.current; if (!input) return; input.webkitdirectory = true; input.setAttribute('webkitdirectory', ''); input.setAttribute('directory', '') }, [])
   const registerInput = useCallback((id: string, node: HTMLTextAreaElement | null) => { if (node) inputRefs.current.set(id, node); else inputRefs.current.delete(id) }, [])
-  const requestPick = useCallback((pending: PendingPick) => { pendingPickRef.current = pending; requestAnimationFrame(() => (pending.kind === 'image' ? imageInputRef : pending.kind === 'pdf' ? pdfInputRef : fileInputRef).current?.click()) }, [])
+  const requestPick = useCallback((pending: PendingPick) => {
+    pendingPickRef.current = pending
+    const input = pending.kind === 'image' ? imageInputRef.current : pending.kind === 'pdf' ? pdfInputRef.current : pending.kind === 'folder' ? folderInputRef.current : fileInputRef.current
+    input?.click()
+  }, [])
   const chooseCommand = useCallback((command: NoteCommand, currentBlocks: NoteBlock[], index: number, commit: (next: NoteBlock[]) => void) => {
     const current = currentBlocks[index]; if (!current) return
     const attachmentId = command.picker ? uid() : undefined
-    const converted: NoteBlock = { ...current, type: command.type, content: '', checked: command.type === 'todo' ? false : undefined, children: command.type === 'toggle' ? [createNoteBlock(uid())] : undefined, collapsed: command.type === 'toggle' ? true : undefined, attachmentId, attachmentKind: command.picker, embedUrl: command.type === 'embed' ? '' : undefined }
+    const attachmentKind = command.picker === 'folder' ? 'file' : command.picker
+    const converted: NoteBlock = { ...current, type: command.type, content: '', checked: command.type === 'todo' ? false : undefined, children: command.type === 'toggle' ? [createNoteBlock(uid())] : undefined, collapsed: command.type === 'toggle' ? true : undefined, attachmentId, attachmentKind, embedUrl: command.type === 'embed' ? '' : undefined }
     if (command.type === 'divider') { const paragraph = createNoteBlock(uid()); commit([...currentBlocks.slice(0, index), converted, paragraph, ...currentBlocks.slice(index + 1)]); setSlash(null); focusBlock(paragraph.id); return }
     commit(currentBlocks.map((block, blockIndex) => blockIndex === index ? converted : block)); setSlash(null)
     if (command.picker && attachmentId) { setUploads((current) => ({ ...current, [converted.id]: { state: 'selecting', progress: 0 } })); requestPick({ blockId: converted.id, attachmentId, kind: command.picker }) } else focusBlock(converted.id)
   }, [focusBlock, requestPick])
   const chooseFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; event.target.value = ''; const pending = pendingPickRef.current; pendingPickRef.current = null; if (!file || !pending) return
-    const previewUrl = pending.kind === 'image' ? URL.createObjectURL(file) : undefined; setUploads((current) => ({ ...current, [pending.blockId]: { state: 'uploading', progress: 0, previewUrl } }))
-    if (!db) { setUploads((current) => ({ ...current, [pending.blockId]: { state: 'error', progress: 0, previewUrl, error: 'Firebase 로그인이 필요해요.' } })); return }
-    const controller = new AbortController(); uploadControllersRef.current.set(pending.attachmentId, controller)
-    try { await uploadAttachment(db, { tripId, notePageId: pageId, blockId: pending.blockId, attachmentId: pending.attachmentId, kind: pending.kind, file, createdBy: userId, signal: controller.signal, onProgress: (progress) => setUploads((current) => ({ ...current, [pending.blockId]: { ...current[pending.blockId], state: 'uploading', progress } })) }); setUploads((current) => ({ ...current, [pending.blockId]: { ...current[pending.blockId], state: 'ready', progress: 1 } })) }
-    catch (error) { const code = error instanceof Error ? error.message : ''; const message = code === 'FILE_TOO_LARGE' ? '파일이 너무 커요. 15MB 이하의 파일을 사용해 주세요.' : code === 'VIDEO_NOT_SUPPORTED' ? '동영상은 아직 첨부할 수 없어요.' : code === 'UNSUPPORTED_IMAGE' ? '이 이미지 형식은 브라우저에서 변환할 수 없어요.' : '업로드하지 못했어요. 다시 시도해 주세요.'; setUploads((current) => ({ ...current, [pending.blockId]: { ...current[pending.blockId], state: 'error', progress: 0, error: message } })) }
-    finally { uploadControllersRef.current.delete(pending.attachmentId) }
+    const files = Array.from(event.target.files || []); event.target.value = ''; const pending = pendingPickRef.current; pendingPickRef.current = null; if (!files.length || !pending) return
+    const kind: AttachmentKind = pending.kind === 'folder' ? 'file' : pending.kind
+    const selected = files.map((file, index) => ({
+      file,
+      fileName: pending.kind === 'folder' && file.webkitRelativePath ? file.webkitRelativePath : file.name,
+      blockId: index === 0 ? pending.blockId : uid(),
+      attachmentId: index === 0 ? pending.attachmentId : uid(),
+      kind,
+    }))
+    const replacements: NoteBlock[] = selected.map((item) => ({ id: item.blockId, type: item.kind === 'image' ? 'image' : 'file', content: '', attachmentId: item.attachmentId, attachmentKind: item.kind }))
+    if (selected.length > 1) {
+      const next = replaceNoteBlock(blocksRef.current, pending.blockId, replacements); blocksRef.current = next; onBlocksChange(next)
+    }
+    const initialUploads = Object.fromEntries(selected.map((item) => [item.blockId, { state: 'uploading' as const, progress: 0, previewUrl: item.kind === 'image' ? URL.createObjectURL(item.file) : undefined }]))
+    const previousPreview = uploadsRef.current[pending.blockId]?.previewUrl; if (previousPreview) URL.revokeObjectURL(previousPreview)
+    setUploads((current) => ({ ...current, ...initialUploads }))
+    if (!db) { setUploads((current) => ({ ...current, ...Object.fromEntries(selected.map((item) => [item.blockId, { ...current[item.blockId], state: 'error' as const, progress: 0, error: 'Firebase 로그인이 필요해요.' }])) })); return }
+    for (const item of selected) {
+      const controller = new AbortController(); uploadControllersRef.current.set(item.attachmentId, controller)
+      try {
+        await uploadAttachment(db, { tripId, notePageId: pageId, blockId: item.blockId, attachmentId: item.attachmentId, kind: item.kind, file: item.file, fileName: item.fileName, createdBy: userId, signal: controller.signal, onProgress: (progress) => setUploads((current) => ({ ...current, [item.blockId]: { ...current[item.blockId], state: 'uploading', progress } })) })
+        setUploads((current) => ({ ...current, [item.blockId]: { ...current[item.blockId], state: 'ready', progress: 1 } }))
+      } catch (error) {
+        setUploads((current) => ({ ...current, [item.blockId]: { ...current[item.blockId], state: 'error', progress: 0, error: uploadErrorMessage(error) } }))
+      } finally { uploadControllersRef.current.delete(item.attachmentId) }
+    }
   }
   const removeBlock = useCallback((block: NoteBlock) => { if (block.attachmentId) { uploadControllersRef.current.get(block.attachmentId)?.abort(); const previewUrl = uploads[block.id]?.previewUrl; if (previewUrl) URL.revokeObjectURL(previewUrl); setUploads((current) => { const next = { ...current }; delete next[block.id]; return next }); onDeleteAttachment(block) } }, [onDeleteAttachment, uploads])
   const media = useCallback((block: NoteBlock): ReactNode => ['image', 'file'].includes(block.type) ? <AttachmentBlock tripId={tripId} block={block} upload={uploads[block.id]} onPick={() => { const attachmentId = block.attachmentId || uid(); requestPick({ blockId: block.id, attachmentId, kind: block.attachmentKind || (block.type === 'image' ? 'image' : 'file') }) }} /> : undefined, [requestPick, tripId, uploads])
-  return <div className="notion-editor"><EditorList blocks={blocks} level={0} onBlocksChange={onBlocksChange} onAction={onAction} onRemoveBlock={removeBlock} renderMedia={media} activeId={activeId} setActiveId={setActiveId} slash={slash} setSlash={setSlash} registerInput={registerInput} focusBlock={focusBlock} chooseCommand={chooseCommand} /><button type="button" className="note-inline-add" onClick={() => { const block = createNoteBlock(uid(), 'paragraph', '/'); onBlocksChange([...blocks, block]); setSlash({ blockId: block.id, query: '', selected: 0 }); focusBlock(block.id) }}><Plus size={16} /> 블록 추가</button><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/*,.heic,.heif" onChange={(event) => void chooseFile(event)} /><input ref={pdfInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" onChange={(event) => void chooseFile(event)} /><input ref={fileInputRef} className="visually-hidden" type="file" onChange={(event) => void chooseFile(event)} /></div>
+  return <div className="notion-editor"><EditorList blocks={blocks} level={0} onBlocksChange={onBlocksChange} onAction={onAction} onRemoveBlock={removeBlock} renderMedia={media} activeId={activeId} setActiveId={setActiveId} slash={slash} setSlash={setSlash} registerInput={registerInput} focusBlock={focusBlock} chooseCommand={chooseCommand} /><button type="button" className="note-inline-add" onClick={() => { const block = createNoteBlock(uid(), 'paragraph', '/'); onBlocksChange([...blocks, block]); setSlash({ blockId: block.id, query: '', selected: 0 }); focusBlock(block.id) }}><Plus size={16} /> 블록 추가</button><input ref={imageInputRef} className="visually-hidden" type="file" accept="image/*,.heic,.heif" multiple onChange={(event) => void chooseFile(event)} /><input ref={pdfInputRef} className="visually-hidden" type="file" accept="application/pdf,.pdf" multiple onChange={(event) => void chooseFile(event)} /><input ref={fileInputRef} className="visually-hidden" type="file" multiple onChange={(event) => void chooseFile(event)} /><input ref={folderInputRef} className="visually-hidden" type="file" multiple onChange={(event) => void chooseFile(event)} /></div>
 }
 
 function EditorList({ blocks, level, onBlocksChange, onAction, onRemoveBlock, renderMedia, activeId, setActiveId, slash, setSlash, registerInput, focusBlock, chooseCommand }: { blocks: NoteBlock[]; level: number; onBlocksChange: (blocks: NoteBlock[]) => void; onAction: (target: ActionTarget) => void; onRemoveBlock: (block: NoteBlock) => void; renderMedia: (block: NoteBlock) => ReactNode; activeId: string | null; setActiveId: Dispatch<SetStateAction<string | null>>; slash: SlashState | null; setSlash: (state: SlashState | null) => void; registerInput: (id: string, node: HTMLTextAreaElement | null) => void; focusBlock: (id: string, caret?: number) => void; chooseCommand: (command: NoteCommand, blocks: NoteBlock[], index: number, commit: (next: NoteBlock[]) => void) => void }) {

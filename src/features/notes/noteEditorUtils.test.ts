@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NoteBlock } from '../../types'
-import { consecutiveNumber, continuationType, markdownBlockType, normalizeNoteBlocks, slashQuery } from './noteEditorUtils'
+import { consecutiveNumber, continuationType, markdownBlockType, normalizeNoteBlocks, replaceNoteBlock, slashQuery } from './noteEditorUtils'
 
 const block = (id: string, type: NoteBlock['type'], content = ''): NoteBlock => ({ id, type, content })
 
@@ -19,4 +19,9 @@ describe('note editor utilities', () => {
     expect(slashQuery(block('1', 'paragraph', '/토글'))).toBe('토글'); expect(slashQuery(block('2', 'heading1', '/토글'))).toBeNull()
   })
   it('keeps one paragraph in an empty document', () => expect(normalizeNoteBlocks([], () => 'new')).toEqual([{ id: 'new', type: 'paragraph', content: '' }]))
+  it('replaces a nested picker block with all selected folder files', () => {
+    const original = [block('before', 'paragraph'), { ...block('toggle', 'toggle'), children: [block('picker', 'file')] }]
+    const replacements = [block('file-1', 'file'), block('file-2', 'file')]
+    expect(replaceNoteBlock(original, 'picker', replacements)[1].children).toEqual(replacements)
+  })
 })

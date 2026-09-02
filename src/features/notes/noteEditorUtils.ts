@@ -19,4 +19,16 @@ export const slashQuery = (block: NoteBlock) => block.type === 'paragraph' && bl
 
 export const normalizeNoteBlocks = (blocks: NoteBlock[], makeId: () => string) => blocks.length ? blocks : [createNoteBlock(makeId())]
 
+export const replaceNoteBlock = (blocks: NoteBlock[], blockId: string, replacements: NoteBlock[]): NoteBlock[] => {
+  let changed = false
+  const next = blocks.flatMap((block) => {
+    if (block.id === blockId) { changed = true; return replacements }
+    if (!block.children?.length) return [block]
+    const children = replaceNoteBlock(block.children, blockId, replacements)
+    if (children !== block.children) { changed = true; return [{ ...block, children }] }
+    return [block]
+  })
+  return changed ? next : blocks
+}
+
 export const isTextBlock = (block: NoteBlock) => block.type !== 'divider'

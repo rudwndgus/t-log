@@ -1,6 +1,6 @@
 import type { BlockType } from '../../types'
 
-export interface NoteCommand { id: string; type: BlockType; label: string; hint: string; aliases: string[]; group: '기본' | '미디어' | 'T Log'; picker?: 'image' | 'file' | 'pdf' }
+export interface NoteCommand { id: string; type: BlockType; label: string; hint: string; aliases: string[]; group: '기본' | '미디어' | 'T Log'; picker?: 'image' | 'file' | 'pdf' | 'folder' }
 
 export const noteCommands: NoteCommand[] = [
   { id: 'paragraph', type: 'paragraph', label: '텍스트', hint: '기본 텍스트 블록', aliases: ['text', 'paragraph', '본문'], group: '기본' },
@@ -15,6 +15,7 @@ export const noteCommands: NoteCommand[] = [
   { id: 'divider', type: 'divider', label: '구분선', hint: '내용 나누기', aliases: ['divider', 'line', '선'], group: '기본' },
   { id: 'image', type: 'image', label: '사진', hint: '사진 또는 스크린샷', aliases: ['image', 'photo', '이미지'], group: '미디어', picker: 'image' },
   { id: 'file', type: 'file', label: '파일', hint: '여행 문서 첨부', aliases: ['file', 'document', '문서'], group: '미디어', picker: 'file' },
+  { id: 'folder', type: 'file', label: '폴더', hint: '폴더 안의 파일을 한꺼번에 첨부', aliases: ['folder', 'directory', '폴더'], group: '미디어', picker: 'folder' },
   { id: 'pdf', type: 'file', label: 'PDF', hint: 'PDF 여행 문서', aliases: ['pdf'], group: '미디어', picker: 'pdf' },
   { id: 'embed', type: 'embed', label: '임베드', hint: '외부 콘텐츠 URL', aliases: ['embed', 'iframe', 'url'], group: '미디어' },
   { id: 'link', type: 'link', label: '링크', hint: '클릭할 수 있는 주소', aliases: ['link', 'url'], group: '미디어' },
