@@ -43,11 +43,12 @@ export async function createTripDocument(database: Firestore, trip: Trip, profil
 export async function joinTripByCode(database: Firestore, code: string, profile: Profile) {
   const invite = await getDoc(doc(database, 'inviteCodes', code.toUpperCase())); if (!invite.exists()) throw new Error('INVALID_INVITE')
   const tripId = String(invite.data().tripId); const tripRef = doc(database, 'trips', tripId)
-  const tripSnapshot = await getDoc(tripRef); if (!tripSnapshot.exists()) throw new Error('INVALID_INVITE')
-  const row = tripSnapshot.data(); const batch = writeBatch(database)
+  const batch = writeBatch(database)
   batch.update(tripRef, { memberIds: arrayUnion(profile.id), updatedAt: serverTimestamp() })
   batch.set(doc(tripRef, 'members', profile.id), { userId: profile.id, role: 'member', displayName: profile.name, email: profile.email || null, joinedAt: serverTimestamp() })
   await batch.commit()
+  const tripSnapshot = await getDoc(tripRef); if (!tripSnapshot.exists()) throw new Error('INVALID_INVITE')
+  const row = tripSnapshot.data()
   return {
     id: tripId, name: String(row.name), destination: String(row.destination), startDate: String(row.startDate),
     endDate: String(row.endDate), emoji: String(row.emoji || '✈️'), inviteCode: String(row.inviteCode),
@@ -98,14 +99,23 @@ export interface PublicTrip {
   endDate: string
   emoji: string
   places: ItineraryPlace[]
+  includeNotes: boolean
+  notes: NotePage[]
 }
 
-export async function publishTripDocument(database: Firestore, trip: Trip, places: ItineraryPlace[], shareId: string, userId: string) {
+const publicNoteBlocks = (blocks: NotePage['blocks']): NotePage['blocks'] => blocks.flatMap((block) => {
+  if (block.type === 'image' || block.type === 'file') return []
+  return [{ id: block.id, type: block.type, content: block.content, ...(block.checked !== undefined ? { checked: block.checked } : {}), ...(block.collapsed !== undefined ? { collapsed: block.collapsed } : {}), ...(block.children?.length ? { children: publicNoteBlocks(block.children) } : {}) }]
+})
+
+export async function publishTripDocument(database: Firestore, trip: Trip, places: ItineraryPlace[], notes: NotePage[], shareId: string, includeNotes: boolean) {
   const batch = writeBatch(database)
   batch.set(doc(database, 'publicTrips', shareId), {
-    sourceTripId: trip.id, ownerId: userId, name: trip.name, destination: trip.destination,
+    sourceTripId: trip.id, ownerId: trip.createdBy, name: trip.name, destination: trip.destination,
     startDate: trip.startDate, endDate: trip.endDate, emoji: trip.emoji,
     places: places.filter((place) => place.tripId === trip.id).map(publicPlaceFields),
+    includeNotes,
+    notes: includeNotes ? notes.filter((page) => page.tripId === trip.id).map((page) => ({ id: page.id, title: page.title, blocks: publicNoteBlocks(page.blocks) })) : [],
     publishedAt: serverTimestamp(), updatedAt: serverTimestamp()
   })
   batch.update(doc(database, 'trips', trip.id), { publicShareId: shareId, updatedAt: serverTimestamp() })
@@ -115,17 +125,18 @@ export async function publishTripDocument(database: Firestore, trip: Trip, place
 export async function getPublicTrip(database: Firestore, shareId: string): Promise<PublicTrip | null> {
   const snapshot = await getDoc(doc(database, 'publicTrips', shareId))
   if (!snapshot.exists()) return null
-  const row = snapshot.data(); const rawPlaces = Array.isArray(row.places) ? row.places as Array<Record<string, unknown>> : []
+  const row = snapshot.data(); const rawPlaces = Array.isArray(row.places) ? row.places as Array<Record<string, unknown>> : []; const rawNotes = Array.isArray(row.notes) ? row.notes as Array<Record<string, unknown>> : []
   return {
     id: shareId, sourceTripId: String(row.sourceTripId), name: String(row.name), destination: String(row.destination),
-    startDate: String(row.startDate), endDate: String(row.endDate), emoji: String(row.emoji || '✈️'),
+    startDate: String(row.startDate), endDate: String(row.endDate), emoji: String(row.emoji || '✈️'), includeNotes: row.includeNotes === true,
     places: rawPlaces.map((place, index): ItineraryPlace => ({
       id: String(place.id || index), tripId: shareId, day: Number(place.day || 0), name: String(place.name || '장소'),
       address: String(place.address || ''), latitude: Number(place.latitude), longitude: Number(place.longitude),
       startTime: place.startTime ? String(place.startTime) : undefined, endTime: place.endTime ? String(place.endTime) : undefined,
       sortOrder: Number(place.sortOrder || 0), category: place.category ? String(place.category) : undefined,
       source: 'manual_pin', createdBy: 'public', createdAt: ''
-    }))
+    })),
+    notes: row.includeNotes === true ? rawNotes.map((page, index): NotePage => ({ id: String(page.id || index), tripId: shareId, title: String(page.title || '제목 없음'), blocks: Array.isArray(page.blocks) ? page.blocks as NotePage['blocks'] : [], updatedAt: '' })) : []
   }
 }
 
