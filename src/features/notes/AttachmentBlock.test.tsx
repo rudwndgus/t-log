@@ -38,6 +38,12 @@ describe('AttachmentBlock file preview', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'mobile-note.txt 미리보기' })
     expect(dialog.textContent).toContain('preview me')
+    expect(dialog.textContent).toContain('노트로 돌아가기')
+    fireEvent.popState(window)
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'mobile-note.txt 미리보기' })).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: '미리보기' }))
+    await screen.findByRole('dialog', { name: 'mobile-note.txt 미리보기' })
     expect(popup).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: '닫기' }))
     expect(screen.queryByRole('dialog', { name: 'mobile-note.txt 미리보기' })).toBeNull()

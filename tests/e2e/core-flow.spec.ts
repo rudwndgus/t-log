@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 test('creates a trip and connects note, map, and chat flows', async ({ page }) => {
+  const longPlaceName = 'Centre Island Ferry Terminal, 61 Centre Island Dock, Toronto, ON M5J 2E9 캐나다'
   await page.goto('/')
   await page.evaluate(async () => { localStorage.clear(); await new Promise<void>((resolve) => { const request = indexedDB.deleteDatabase('tlog-local'); request.onsuccess = () => resolve(); request.onerror = () => resolve(); request.onblocked = () => resolve() }) })
   await page.reload()
@@ -19,10 +20,15 @@ test('creates a trip and connects note, map, and chat flows', async ({ page }) =
   await page.getByRole('button', { name: /Google Maps 링크 붙여넣기/ }).click()
   await page.getByPlaceholder(/https:\/\/maps.app.goo.gl/).fill('https://www.google.com/maps/place/Old+Montreal/@45.5075,-73.5540,16z')
   await page.getByRole('button', { name: '위치 확인' }).click()
-  await page.getByLabel(/시작 시간/).fill('10:30')
+  await page.getByLabel('장소 이름').fill(longPlaceName)
+  await page.getByRole('button', { name: '정확한 시간' }).click()
+  await page.getByLabel('예약된 시간').fill('10:30')
   await page.getByRole('button', { name: '추가', exact: true }).click()
   await page.getByRole('button', { name: /LIST/ }).click()
-  await expect(page.getByText('Old Montreal')).toBeVisible()
+  await expect(page.getByText(longPlaceName)).toBeVisible()
+  const listFitsViewport = await page.locator('.list-stage').evaluate((element) => element.scrollWidth <= element.clientWidth)
+  expect(listFitsViewport).toBe(true)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
 
   await page.getByRole('button', { name: /MAP/ }).click()
   await page.locator('.map-fab').click()
@@ -30,9 +36,13 @@ test('creates a trip and connects note, map, and chat flows', async ({ page }) =
   await page.locator('.maplibregl-canvas').click({ position: { x: 190, y: 300 } })
   await page.getByRole('button', { name: '이 위치 저장' }).click()
   await page.getByLabel('장소 이름').fill('강변 산책 포인트')
+  await page.getByRole('button', { name: '시간 범위' }).click()
+  await page.getByLabel('시작', { exact: true }).fill('11:00')
+  await page.getByLabel('종료', { exact: true }).fill('13:00')
   await page.getByRole('button', { name: '추가', exact: true }).click()
   await page.getByRole('button', { name: /LIST/ }).click()
   await expect(page.getByText('강변 산책 포인트')).toBeVisible()
+  await expect(page.getByText('오전 11:00 ~ 오후 1:00')).toBeVisible()
 
   await page.getByRole('link', { name: '채팅' }).click()
   await page.getByPlaceholder('메시지...').fill('여기서 만나자!')

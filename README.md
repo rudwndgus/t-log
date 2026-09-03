@@ -33,6 +33,8 @@ Supabase, Mapbox, Google Maps 임베드 및 유료 지도 API는 사용하지 �
 - 노트 → 채팅 공유 → 제안 → 투표 → 일정 승인 흐름
 - 날짜별 MAP/LIST, 번호 핀, API 키 없는 직선 waypoint route
 - 길게 눌러 일정 순서 변경과 수동 교통정보 관리
+- 일정별 시간 미정·정확한 예약 시간·시작~종료 시간 범위 입력
+- 모바일 LIST의 간결한 카드와 긴 장소명·주소 말줄임 처리
 - 세 가지 장소 추가 방식
   - OpenStreetMap 장소 검색
   - 펼쳐진 Google Maps URL 좌표 추출

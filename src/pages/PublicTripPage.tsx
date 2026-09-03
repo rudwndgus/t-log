@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom'
 import { Sheet } from '../components/Sheet'
 import { MapCanvas } from '../features/map/MapCanvas'
 import { db } from '../lib/firebase'
-import { dayLabel, formatTripDates, tripDayCount } from '../lib/utils'
+import { dayLabel, formatTripDates, timeRangeLabel, tripDayCount } from '../lib/utils'
 import { getPublicTrip, type PublicTrip } from '../services/firestore'
 import type { ItineraryPlace, NoteBlock } from '../types'
 
@@ -25,10 +25,10 @@ export function PublicTripPage() {
         {view !== 'notes' && <div className="day-switcher"><button disabled={day === 0} onClick={() => setDay(day - 1)}><ChevronLeft size={20} /></button><strong>{dayLabel(trip.startDate, day)}</strong><button disabled={day === days - 1} onClick={() => setDay(day + 1)}><ChevronRight size={20} /></button></div>}
         <div className="view-toggle"><button className={view === 'map' ? 'is-active' : ''} onClick={() => setView('map')}><MapIcon size={15} /> MAP</button><button className={view === 'list' ? 'is-active' : ''} onClick={() => setView('list')}><List size={15} /> LIST</button>{trip.includeNotes && <button className={view === 'notes' ? 'is-active' : ''} onClick={() => setView('notes')}><BookOpen size={15} /> NOTE</button>}</div>
       </div>
-      {view === 'map' ? <div className="public-map-stage"><MapCanvas places={places} focusedId={selected?.id} resetKey={day} onSelect={setSelected} /></div> : view === 'list' ? <div className="public-list">{places.length ? places.map((place, index) => <button key={place.id} onClick={() => setSelected(place)}><span>{index + 1}</span><div>{place.startTime && <time>{place.startTime}</time>}<strong>{place.name}</strong><small>{place.address || '위치 정보'}</small></div><ChevronRight size={18} /></button>) : <div className="public-empty"><MapPin size={25} /><strong>이 날짜에는 공개된 일정이 없어요.</strong></div>}</div> : <PublicNotes trip={trip} />}
+      {view === 'map' ? <div className="public-map-stage"><MapCanvas places={places} focusedId={selected?.id} resetKey={day} onSelect={setSelected} /></div> : view === 'list' ? <div className="public-list">{places.length ? places.map((place, index) => <button key={place.id} onClick={() => setSelected(place)}><span>{index + 1}</span><div>{place.startTime && <time>{timeRangeLabel(place.startTime, place.endTime)}</time>}<strong>{place.name}</strong><small>{place.address || '위치 정보'}</small></div><ChevronRight size={18} /></button>) : <div className="public-empty"><MapPin size={25} /><strong>이 날짜에는 공개된 일정이 없어요.</strong></div>}</div> : <PublicNotes trip={trip} />}
     </main>
     <footer className="public-trip-footer"><strong>T Log</strong><span>공유된 여행을 읽기 전용으로 보고 있어요.</span></footer>
-    <Sheet open={Boolean(selected)} title="일정 장소" onClose={() => setSelected(null)}>{selected && <div className="place-detail"><span className="place-detail__icon"><MapPin size={22} /></span><h3>{selected.name}</h3><p>{selected.address || '주소 없음'}</p>{selected.startTime && <time>{selected.startTime}</time>}</div>}</Sheet>
+    <Sheet open={Boolean(selected)} title="일정 장소" onClose={() => setSelected(null)}>{selected && <div className="place-detail"><span className="place-detail__icon"><MapPin size={22} /></span><h3>{selected.name}</h3><p>{selected.address || '주소 없음'}</p>{selected.startTime && <time>{timeRangeLabel(selected.startTime, selected.endTime)}</time>}</div>}</Sheet>
   </div>
 }
 
