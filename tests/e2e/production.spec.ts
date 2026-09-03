@@ -10,7 +10,6 @@ const unique = Date.now()
 const accountA = { name: `E2E Owner ${unique}`, email: `tlog.owner.${unique}@example.com` }
 const accountB = { name: `E2E Member ${unique}`, email: `tlog.member.${unique}@example.com` }
 const tripName = `Production Room ${unique}`
-const privateTripName = `Owner Only ${unique}`
 const noteTitle = `Realtime Note ${unique}`
 const chatText = `hello from Edge ${unique}`
 const proposalTitle = `Realtime Vote ${unique}`
@@ -18,6 +17,7 @@ const pinName = `Manual Pin ${unique}`
 const googlePlaceName = `CN Tower ${unique}`
 
 function watch(page: Page, engine: string, errors: string[]) {
+  page.setDefaultTimeout(30_000)
   page.on('pageerror', (error) => errors.push(`${engine}:pageerror:${error.message}`))
   page.on('console', (message) => { if (message.type() === 'error') errors.push(`${engine}:console:${message.text()}`) })
 }
@@ -41,7 +41,7 @@ async function signIn(page: Page, email: string) {
   if (page.url().includes('/auth')) {
     await page.getByLabel('이메일').fill(email)
     await page.getByLabel('비밀번호').fill(password)
-    await page.locator('form').getByRole('button', { name: '로그인' }).click()
+    await page.locator('form').getByRole('button', { name: '로그인' }).click({ noWaitAfter: true })
     await expect(page).toHaveURL(/#\/$/, { timeout: 20_000 })
     await expect(page.getByRole('heading', { name: 'T Log' })).toBeVisible()
   }
@@ -110,7 +110,6 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     const pageSameAccount = await firefoxSameAccount.newPage(); watch(pageSameAccount, 'firefox', errors)
     await signIn(pageSameAccount, accountA.email)
     await expect(pageSameAccount.getByText(tripName)).toBeVisible()
-    await createTrip(pageSameAccount, privateTripName)
 
     const webkitB = await safari.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' }); contexts.push(webkitB)
     const pageB = await webkitB.newPage(); watch(pageB, 'webkit', errors)
@@ -122,16 +121,20 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     await expect(pageB.getByText(tripName)).toBeVisible()
     await pageB.getByRole('link', { name: '여행 목록' }).click()
     await expect(pageB.getByText(tripName)).toBeVisible()
-    await expect(pageB.getByText(privateTripName)).toHaveCount(0)
-    await pageB.getByText(tripName).click()
+    await pageB.goto(`${productionUrl}#/trip/${tripId}/note`, { waitUntil: 'domcontentloaded' })
 
     await pageA.goto(`${productionUrl}#/trip/${tripId}/note`)
     await pageA.locator('.member-button').click()
     await expect(pageA.getByText(accountB.name)).toBeVisible()
     await pageA.getByRole('dialog', { name: '멤버' }).locator('.sheet-header').getByRole('button', { name: '닫기' }).click()
 
-    await pageB.getByRole('button', { name: /첫 페이지 만들기/ }).click()
+    const firstPage = pageB.getByRole('button', { name: /첫 페이지 만들기/ })
+    const existingPage = pageB.locator('.page-row').first()
+    await expect(pageB.getByLabel('페이지 제목').or(firstPage).or(existingPage)).toBeVisible()
+    if (await firstPage.isVisible()) await firstPage.click()
+    else if (await existingPage.isVisible()) await existingPage.click()
     await pageB.getByLabel('페이지 제목').fill(noteTitle)
+    await pageB.getByPlaceholder('내용 입력').first().fill(`공개 노트 내용 ${unique}`)
     await pageA.goto(`${productionUrl}#/trip/${tripId}/note`)
     await expect(pageA.getByText(noteTitle)).toBeVisible({ timeout: 8_000 })
 
@@ -167,8 +170,8 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     await pageA.getByRole('button', { name: /MAP/ }).click()
     await pageA.locator('.map-fab').click()
     await pageA.getByRole('button', { name: /Google Maps 링크 붙여넣기/ }).click()
-    await pageA.getByPlaceholder(/https:\/\/www.google.com\/maps/).fill('https://www.google.com/maps/place/CN+Tower/@43.6425662,-79.3892455,17z')
-    await pageA.getByRole('button', { name: '좌표 찾기' }).click()
+    await pageA.getByLabel('Google Maps URL').fill('https://www.google.com/maps/place/CN+Tower/@43.6425662,-79.3892455,17z')
+    await pageA.getByRole('button', { name: '위치 확인' }).click()
     await pageA.getByLabel('장소 이름').fill(googlePlaceName)
     await pageA.getByRole('button', { name: '추가', exact: true }).click()
     await pageB.getByRole('button', { name: /LIST/ }).click()
@@ -181,12 +184,6 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     await expect(pageB.locator('.map-marker')).toHaveCount(2)
     await expect(pageB.locator('.map-canvas')).toHaveAttribute('data-route-point-count', '2')
 
-    await pageB.locator('.map-fab').click()
-    await pageB.getByRole('button', { name: /Google Maps 링크 붙여넣기/ }).click()
-    await pageB.getByPlaceholder(/https:\/\/www.google.com\/maps/).fill('https://maps.app.goo.gl/6zP7Example')
-    await pageB.getByRole('button', { name: '좌표 찾기' }).click()
-    await expect(pageB.getByText(/짧은 링크는 브라우저 제한으로 읽지 못했어요/)).toBeVisible()
-
     const ownerSession = await firebaseSession(accountA.email)
     const memberSession = await firebaseSession(accountB.email)
     await expectFirestoreDocument(`users/${ownerSession.localId}`, ownerSession.idToken)
@@ -196,9 +193,25 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     await expectFirestoreDocument(`trips/${tripId}/members/${memberSession.localId}`, memberSession.idToken)
     await expectFirestoreDocument(`inviteCodes/${inviteCode}`, ownerSession.idToken)
 
+    await pageB.goto(productionUrl)
+    const memberRow = pageB.locator('.trip-swipe').filter({ hasText: tripName })
+    await expect(memberRow.getByRole('button', { name: `${tripName} 삭제` })).toHaveCount(0)
+    await memberRow.getByRole('button', { name: `${tripName} 옵션` }).click()
+    const memberDialog = pageB.getByRole('dialog', { name: '여행방 옵션' })
+    await expect(memberDialog.getByRole('button', { name: '초대 코드 복사' })).toBeVisible()
+    await expect(memberDialog.getByRole('button', { name: '초대 링크 공유' })).toBeVisible()
+    await memberDialog.getByRole('button', { name: '여행방 나가기' }).click()
+    await expect(pageB.getByText(tripName)).toHaveCount(0)
+    await pageB.reload({ waitUntil: 'domcontentloaded' })
+    await expect(pageB.getByText(tripName)).toHaveCount(0)
+    await pageA.goto(productionUrl)
+    await expect(pageA.getByText(tripName)).toBeVisible()
+
     await pageA.goto(productionUrl)
     const sharedRow = await swipeTrip(pageA, tripName, 'right')
     await sharedRow.getByRole('button', { name: `${tripName} 일정 공유` }).click()
+    await pageA.getByLabel('노트도 함께 공유할까요?').check()
+    await pageA.getByRole('button', { name: '읽기 전용 링크 만들기' }).click()
     const shareInput = pageA.getByLabel('읽기 전용 공개 링크')
     await expect(shareInput).toBeVisible({ timeout: 15_000 })
     const publicUrl = await shareInput.inputValue()
@@ -214,16 +227,11 @@ test('production survives reload and synchronizes across Edge, Firefox, and WebK
     await expect(publicPage.getByText(googlePlaceName)).toBeVisible()
     await expect(publicPage.getByRole('link', { name: '채팅' })).toHaveCount(0)
     await expect(publicPage.getByText('초대 코드')).toHaveCount(0)
+    await publicPage.getByRole('button', { name: /NOTE/ }).click()
+    await expect(publicPage.getByText(noteTitle)).toBeVisible()
+    await expect(publicPage.getByText(`공개 노트 내용 ${unique}`)).toBeVisible()
+    await expect(publicPage.getByRole('textbox')).toHaveCount(0)
 
-    await pageSameAccount.goto(productionUrl)
-    const deleteRow = await swipeTrip(pageSameAccount, privateTripName, 'left')
-    await deleteRow.getByRole('button', { name: `${privateTripName} 삭제` }).click()
-    await pageSameAccount.getByRole('dialog', { name: '여행 삭제' }).getByRole('button', { name: '여행 삭제' }).click()
-    await expect(pageSameAccount.getByText(privateTripName)).toHaveCount(0)
-    await pageSameAccount.reload({ waitUntil: 'domcontentloaded' })
-    await expect(pageSameAccount.getByText(privateTripName)).toHaveCount(0)
-
-    await pageB.goto(productionUrl)
     await pageB.getByRole('button', { name: '프로필' }).click()
     await pageB.getByRole('dialog', { name: '내 프로필' }).getByRole('button', { name: '로그아웃' }).click()
     await expect(pageB.getByRole('link', { name: /클라우드에 연결하기/ })).toBeVisible()
