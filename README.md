@@ -24,9 +24,10 @@ Supabase, Mapbox, Google Maps 임베드 및 유료 지도 API는 사용하지 �
 
 - 이메일/비밀번호 로그인과 회원가입, 세션 유지
 - 프로필 시트에서 안전한 로그아웃
-- 초대 코드와 공유 링크가 있는 여행방
+- 초대 코드로 참여한 동행의 전체 협업 권한과 안전한 여행방 나가기
 - 여행 카드 오른쪽 스와이프 공개 일정 공유, 왼쪽 스와이프 여행 삭제
-- 비로그인 방문자에게 지도·웨이포인트·일정 목록만 보여주는 읽기 전용 공개 링크
+- 비로그인 방문자에게 지도·웨이포인트·일정과 선택한 텍스트 노트만 보여주는 읽기 전용 공개 링크
+- 앱 실행 중 다른 동행의 새 채팅·일정 추가 브라우저 알림
 - Firestore `onSnapshot()` 기반 멤버·노트·장소·이동·채팅·제안 실시간 반영
 - 모바일 블록 노트와 800ms 디바운스 저장
 - 노트 → 채팅 공유 → 제안 → 투표 → 일정 승인 흐름
@@ -80,14 +81,14 @@ npx firebase-tools login
 npx firebase-tools deploy --only firestore:rules
 ```
 
-[`firestore.rules`](firestore.rules)는 인증된 여행 멤버에게만 하위 데이터를 허용합니다. 여행 삭제·멤버 제거는 owner만 가능하고, 투표 문서는 로그인한 본인만 작성할 수 있습니다. `allow read, write: if true` 규칙은 사용하지 않습니다.
+[`firestore.rules`](firestore.rules)는 초대 코드로 참여한 인증된 여행 멤버에게 노트·일정·채팅·투표의 협업 권한을 허용합니다. 여행방 삭제는 owner만 가능하고, 동행 멤버는 자기 자신만 안전하게 나갈 수 있습니다. 공개 링크는 별도 스냅샷을 익명 읽기만 허용하며 편집 권한을 주지 않습니다. `allow read, write: if true` 규칙은 사용하지 않습니다.
 
 Firestore 구조:
 
 ```text
 users/{userId}
 inviteCodes/{inviteCode}
-publicTrips/{publicShareId}  # 일정 전용 공개 스냅샷
+publicTrips/{publicShareId}  # 일정 + 선택한 텍스트 노트 읽기 전용 스냅샷
 trips/{tripId}
   members/{userId}
   notes/{noteId}

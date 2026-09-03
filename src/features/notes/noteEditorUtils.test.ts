@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { NoteBlock } from '../../types'
-import { consecutiveNumber, continuationType, markdownBlockType, normalizeNoteBlocks, replaceNoteBlock, slashQuery } from './noteEditorUtils'
+import { consecutiveNumber, continuationType, markdownBlockType, moveNoteBlock, normalizeNoteBlocks, replaceNoteBlock, slashQuery } from './noteEditorUtils'
 
 const block = (id: string, type: NoteBlock['type'], content = ''): NoteBlock => ({ id, type, content })
 
@@ -23,5 +23,19 @@ describe('note editor utilities', () => {
     const original = [block('before', 'paragraph'), { ...block('toggle', 'toggle'), children: [block('picker', 'file')] }]
     const replacements = [block('file-1', 'file'), block('file-2', 'file')]
     expect(replaceNoteBlock(original, 'picker', replacements)[1].children).toEqual(replacements)
+  })
+  it('moves blocks between different toggles without losing their content', () => {
+    const original: NoteBlock[] = [
+      { ...block('toggle-a', 'toggle'), children: [block('move-me', 'paragraph', '옮길 내용')] },
+      { ...block('toggle-b', 'toggle'), children: [block('stay', 'paragraph', '기존 내용')] },
+    ]
+    const moved = moveNoteBlock(original, 'move-me', 'toggle-b', 1)
+    expect(moved[0].children).toEqual([])
+    expect(moved[1].children?.map((item) => item.id)).toEqual(['stay', 'move-me'])
+    expect(moved[1].children?.[1].content).toBe('옮길 내용')
+  })
+  it('does not allow a toggle to be moved inside itself', () => {
+    const original: NoteBlock[] = [{ ...block('toggle', 'toggle'), children: [block('child', 'paragraph')] }]
+    expect(moveNoteBlock(original, 'toggle', 'toggle', 0)).toBe(original)
   })
 })

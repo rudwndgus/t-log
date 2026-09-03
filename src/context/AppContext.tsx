@@ -1,13 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut as firebaseSignOut, updateProfile } from 'firebase/auth'
 import { auth, db, isFirebaseConfigured } from '../lib/firebase'
 import { inviteCode, uid } from '../lib/utils'
-import { createProposalDocument, createTripDocument, deleteNoteDocument, deletePlaceDocument, deleteTripDocument, ensureInitialNoteDocument, joinTripByCode, publishTripDocument, saveMessageDocument, saveNoteDocument, savePlaceDocument, savePlaceOrder, saveProfile, saveProposalStatus, saveSegmentDocument, saveVote, subscribeToUserData } from '../services/firestore'
+import { createProposalDocument, createTripDocument, deleteNoteDocument, deletePlaceDocument, deleteTripDocument, ensureInitialNoteDocument, joinTripByCode, leaveTripDocument, publishTripDocument, saveMessageDocument, saveNoteDocument, savePlaceDocument, savePlaceOrder, saveProfile, saveProposalStatus, saveSegmentDocument, saveVote, subscribeToUserData, type RealtimeActivity } from '../services/firestore'
 import { loadLocalData, saveLocalData } from '../services/localStore'
 import { collectAttachmentIds, deleteAttachment } from '../services/noteAttachments'
 import type { ChatMessage, ItineraryPlace, NoteBlock, NotePage, PollOption, Profile, Proposal, TLogData, TransportSegment, Trip } from '../types'
 
 const PROFILE_KEY = 'tlog:profile:v2'
+const NOTIFICATION_KEY = 'tlog:notifications:v1'
 const emptyData: TLogData = { trips: [], notes: [], places: [], segments: [], messages: [], proposals: [] }
 const fallbackProfile: Profile = { id: 'local-user', name: '여행자' }
 const noteSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -17,7 +18,8 @@ type NewPlaceInput = Omit<ItineraryPlace, 'id' | 'sortOrder' | 'createdBy' | 'cr
 interface AppContextValue {
   data: TLogData; profile: Profile; ready: boolean; online: boolean; cloudMode: boolean; signedIn: boolean; cloudError: string | null; clearCloudError: () => void
   signIn: (email: string, password: string) => Promise<void>; signUp: (name: string, email: string, password: string) => Promise<void>; signOut: () => Promise<void>; setProfileName: (name: string) => void
-  createTrip: (input: CreateTripInput) => Promise<Trip>; deleteTrip: (tripId: string) => Promise<void>; shareTrip: (tripId: string, includeNotes: boolean) => Promise<string>; joinTrip: (code: string) => Trip | null; joinCloudTrip: (code: string) => Promise<string>
+  createTrip: (input: CreateTripInput) => Promise<Trip>; deleteTrip: (tripId: string) => Promise<void>; leaveTrip: (tripId: string) => Promise<void>; shareTrip: (tripId: string, includeNotes: boolean) => Promise<string>; joinTrip: (code: string) => Trip | null; joinCloudTrip: (code: string) => Promise<string>
+  notificationsSupported: boolean; notificationsEnabled: boolean; setNotificationsEnabled: (enabled: boolean) => Promise<boolean>
   addNotePage: (tripId: string, title?: string) => Promise<NotePage>; ensureInitialNotePage: (tripId: string) => Promise<NotePage>; updateNotePage: (pageId: string, changes: Partial<Pick<NotePage, 'title' | 'blocks'>>) => void; deleteNotePage: (pageId: string) => Promise<void>; duplicateNotePage: (pageId: string) => Promise<NotePage | undefined>; reorderNotePages: (tripId: string, oldIndex: number, newIndex: number) => void; addBlock: (pageId: string, block: Omit<NoteBlock, 'id'>) => void
   addPlace: (input: NewPlaceInput) => Promise<ItineraryPlace>; updatePlace: (placeId: string, changes: Partial<ItineraryPlace>) => Promise<void>; deletePlace: (placeId: string) => Promise<void>; reorderPlaces: (tripId: string, day: number, orderedIds: string[]) => Promise<void>; upsertSegment: (segment: TransportSegment) => Promise<void>
   sendMessage: (tripId: string, body: string, type?: ChatMessage['type'], refs?: Partial<ChatMessage>) => Promise<ChatMessage>; createProposal: (input: Omit<Proposal, 'id' | 'createdBy' | 'createdAt' | 'status'>) => Promise<Proposal>; vote: (proposalId: string, optionId: string) => Promise<void>; setProposalStatus: (proposalId: string, status: Proposal['status']) => Promise<void>
@@ -37,6 +39,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [online, setOnline] = useState(navigator.onLine)
   const [signedIn, setSignedIn] = useState(false)
   const [cloudError, setCloudError] = useState<string | null>(null)
+  const notificationsSupported = typeof Notification !== 'undefined'
+  const [notificationsEnabled, setNotificationState] = useState(() => notificationsSupported && Notification.permission === 'granted' && localStorage.getItem(NOTIFICATION_KEY) === 'true')
+  const notificationsRef = useRef(notificationsEnabled); notificationsRef.current = notificationsEnabled
+  const profileIdRef = useRef(profile.id); profileIdRef.current = profile.id
   const mutate = useCallback((fn: (previous: TLogData) => TLogData) => setData((previous) => fn(previous)), [])
   const clearCloudError = useCallback(() => setCloudError(null), [])
   const reportCloudError = useCallback((operation: string, error: unknown, context: Record<string, unknown> = {}) => {
@@ -47,6 +53,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       : details.code.includes('unauthenticated')
         ? '로그인 세션이 만료됐어요. 다시 로그인해 주세요.'
         : '클라우드 작업을 완료하지 못했어요. 네트워크 연결을 확인하고 다시 시도해 주세요.')
+  }, [])
+  const setNotificationsEnabled = useCallback(async (enabled: boolean) => {
+    if (!notificationsSupported) return false
+    if (!enabled) { localStorage.setItem(NOTIFICATION_KEY, 'false'); setNotificationState(false); return false }
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
+    const accepted = permission === 'granted'; localStorage.setItem(NOTIFICATION_KEY, String(accepted)); setNotificationState(accepted); return accepted
+  }, [notificationsSupported])
+  const notifyActivity = useCallback((activity: RealtimeActivity) => {
+    if (!notificationsRef.current || activity.actorId === profileIdRef.current || Notification.permission !== 'granted') return
+    const title = activity.type === 'message' ? `${activity.tripName} · 새 채팅` : `${activity.tripName} · 새 일정`
+    const body = activity.type === 'message' ? activity.body : `${activity.body} 일정이 추가됐어요.`
+    void navigator.serviceWorker?.getRegistration().then((registration) => {
+      if (registration) return registration.showNotification(title, { body, tag: `tlog-${activity.type}-${activity.tripId}` })
+      new Notification(title, { body, tag: `tlog-${activity.type}-${activity.tripId}` })
+    }).catch(() => undefined)
   }, [])
 
   useEffect(() => { const onOnline = () => setOnline(true); const onOffline = () => setOnline(false); window.addEventListener('online', onOnline); window.addEventListener('offline', onOffline); return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline) } }, [])
@@ -77,10 +98,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // A newly-created Auth user emits once before updateProfile finishes.
       // signUp owns that first profile write so two concurrent setDoc calls cannot stall navigation.
       if (user.displayName) void saveProfile(database, nextProfile).catch((error) => reportCloudError('save-profile', error, { userId: user.uid }))
-      unsubscribeData = subscribeToUserData(database, user.uid, (nextData) => { setData(nextData); setReady(true) }, (error, context) => { reportCloudError('subscribe-user-data', error, { userId: user.uid, ...context }); setReady(true) })
+      unsubscribeData = subscribeToUserData(database, user.uid, (nextData) => { setData(nextData); setReady(true) }, (error, context) => { reportCloudError('subscribe-user-data', error, { userId: user.uid, ...context }); setReady(true) }, notifyActivity)
     }, (error) => { reportCloudError('auth-state', error); setReady(true) })
     return () => { unsubscribeAuth(); unsubscribeData?.() }
-  }, [reportCloudError])
+  }, [notifyActivity, reportCloudError])
 
   const signIn = async (email: string, password: string) => { if (!auth) throw new Error('NOT_CONFIGURED'); await signInWithEmailAndPassword(auth, email, password) }
   const signUp = async (name: string, email: string, password: string) => { if (!auth || !db) throw new Error('NOT_CONFIGURED'); const credential = await createUserWithEmailAndPassword(auth, email, password); const nextProfile = { id: credential.user.uid, name: name.trim(), email }; await updateProfile(credential.user, { displayName: name.trim() }); await credential.user.getIdToken(true); await saveProfile(db, nextProfile); setProfile(nextProfile) }
@@ -92,6 +113,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try { if (db && signedIn) await createTripDocument(db, trip, profile); mutate((current) => ({ ...current, trips: [trip, ...current.trips.filter((item) => item.id !== trip.id)] })); return trip } catch (error) { reportCloudError('create-trip', error, { tripId: trip.id, userId: profile.id }); throw error }
   }
   const deleteTrip = async (tripId: string) => { const trip = data.trips.find((item) => item.id === tripId); if (!trip) return; try { if (db && signedIn) await deleteTripDocument(db, trip); mutate((current) => ({ ...current, trips: current.trips.filter((item) => item.id !== tripId), notes: current.notes.filter((item) => item.tripId !== tripId), places: current.places.filter((item) => item.tripId !== tripId), segments: current.segments.filter((item) => item.tripId !== tripId), messages: current.messages.filter((item) => item.tripId !== tripId), proposals: current.proposals.filter((item) => item.tripId !== tripId) })) } catch (error) { reportCloudError('delete-trip', error, { tripId, userId: profile.id }); throw error } }
+  const leaveTrip = async (tripId: string) => { const trip = data.trips.find((item) => item.id === tripId); if (!trip) return; if (trip.createdBy === profile.id) throw new Error('OWNER_CANNOT_LEAVE'); try { if (db && signedIn) await leaveTripDocument(db, tripId, profile.id); mutate((current) => ({ ...current, trips: current.trips.filter((item) => item.id !== tripId), notes: current.notes.filter((item) => item.tripId !== tripId), places: current.places.filter((item) => item.tripId !== tripId), segments: current.segments.filter((item) => item.tripId !== tripId), messages: current.messages.filter((item) => item.tripId !== tripId), proposals: current.proposals.filter((item) => item.tripId !== tripId) })) } catch (error) { reportCloudError('leave-trip', error, { tripId, userId: profile.id }); throw error } }
   const shareTrip = async (tripId: string, includeNotes: boolean) => { const trip = data.trips.find((item) => item.id === tripId); if (!trip) throw new Error('TRIP_NOT_FOUND'); if (!db || !signedIn) throw new Error('CLOUD_REQUIRED'); const shareId = trip.publicShareId || uid().replaceAll('-', '').slice(0, 20); try { await publishTripDocument(db, trip, data.places, data.notes, shareId, includeNotes); mutate((current) => ({ ...current, trips: current.trips.map((item) => item.id === tripId ? { ...item, publicShareId: shareId } : item) })); return `${location.origin}${location.pathname}#/shared/${shareId}` } catch (error) { reportCloudError('publish-trip', error, { tripId, userId: profile.id, includeNotes }); throw error } }
   const joinTrip = (code: string) => data.trips.find((trip) => trip.inviteCode === code.trim().toUpperCase()) || null
   const joinCloudTrip = async (code: string) => { if (!db || !signedIn) throw new Error('AUTH_REQUIRED'); try { const trip = await joinTripByCode(db, code, profile); mutate((current) => ({ ...current, trips: [trip, ...current.trips.filter((item) => item.id !== trip.id)] })); return trip.id } catch (error) { reportCloudError('join-trip', error, { inviteCode: code.toUpperCase(), userId: profile.id }); throw error } }
@@ -126,7 +148,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const vote = async (proposalId: string, optionId: string) => { const proposal = data.proposals.find((item) => item.id === proposalId); if (!proposal) return; try { if (db && signedIn) await saveVote(db, proposal.tripId, proposalId, optionId, profile.id); mutate((current) => ({ ...current, proposals: current.proposals.map((item) => item.id !== proposalId ? item : { ...item, options: item.options.map((option): PollOption => ({ ...option, voterIds: option.id === optionId ? Array.from(new Set([...option.voterIds.filter((id) => id !== profile.id), profile.id])) : option.voterIds.filter((id) => id !== profile.id) })) }) })) } catch (error) { reportCloudError('vote', error, { tripId: proposal.tripId, proposalId, userId: profile.id }); throw error } }
   const setProposalStatus = async (proposalId: string, status: Proposal['status']) => { const proposal = data.proposals.find((item) => item.id === proposalId); if (!proposal) return; try { if (db && signedIn) await saveProposalStatus(db, proposal.tripId, proposalId, status); mutate((current) => ({ ...current, proposals: current.proposals.map((item) => item.id === proposalId ? { ...item, status } : item) })) } catch (error) { reportCloudError('set-proposal-status', error, { tripId: proposal.tripId, proposalId, userId: profile.id }); throw error } }
 
-  return <AppContext.Provider value={{ data, profile, ready, online, cloudMode: isFirebaseConfigured, signedIn, cloudError, clearCloudError, signIn, signUp, signOut, setProfileName, createTrip, deleteTrip, shareTrip, joinTrip, joinCloudTrip, addNotePage, ensureInitialNotePage, updateNotePage, deleteNotePage, duplicateNotePage, reorderNotePages, addBlock, addPlace, updatePlace, deletePlace, reorderPlaces, upsertSegment, sendMessage, createProposal, vote, setProposalStatus }}>{children}</AppContext.Provider>
+  return <AppContext.Provider value={{ data, profile, ready, online, cloudMode: isFirebaseConfigured, signedIn, cloudError, clearCloudError, signIn, signUp, signOut, setProfileName, createTrip, deleteTrip, leaveTrip, shareTrip, joinTrip, joinCloudTrip, notificationsSupported, notificationsEnabled, setNotificationsEnabled, addNotePage, ensureInitialNotePage, updateNotePage, deleteNotePage, duplicateNotePage, reorderNotePages, addBlock, addPlace, updatePlace, deletePlace, reorderPlaces, upsertSegment, sendMessage, createProposal, vote, setProposalStatus }}>{children}</AppContext.Provider>
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

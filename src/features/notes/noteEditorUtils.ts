@@ -31,4 +31,54 @@ export const replaceNoteBlock = (blocks: NoteBlock[], blockId: string, replaceme
   return changed ? next : blocks
 }
 
+export interface NoteBlockLocation { block: NoteBlock; parentId: string | null; index: number }
+
+export const findNoteBlockLocation = (blocks: NoteBlock[], blockId: string, parentId: string | null = null): NoteBlockLocation | null => {
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index]
+    if (block.id === blockId) return { block, parentId, index }
+    const nested = block.children?.length ? findNoteBlockLocation(block.children, blockId, block.id) : null
+    if (nested) return nested
+  }
+  return null
+}
+
+const removeNoteBlock = (blocks: NoteBlock[], blockId: string): { blocks: NoteBlock[]; removed?: NoteBlock } => {
+  const directIndex = blocks.findIndex((block) => block.id === blockId)
+  if (directIndex >= 0) return { blocks: blocks.filter((_, index) => index !== directIndex), removed: blocks[directIndex] }
+  for (let index = 0; index < blocks.length; index += 1) {
+    const block = blocks[index]
+    if (!block.children?.length) continue
+    const result = removeNoteBlock(block.children, blockId)
+    if (result.removed) return { blocks: blocks.map((item, itemIndex) => itemIndex === index ? { ...item, children: result.blocks } : item), removed: result.removed }
+  }
+  return { blocks }
+}
+
+const insertNoteBlock = (blocks: NoteBlock[], block: NoteBlock, parentId: string | null, index: number): NoteBlock[] | null => {
+  if (parentId === null) { const next = [...blocks]; next.splice(Math.max(0, Math.min(index, next.length)), 0, block); return next }
+  for (let cursor = 0; cursor < blocks.length; cursor += 1) {
+    const item = blocks[cursor]
+    if (item.id === parentId && item.type === 'toggle') {
+      const children = [...(item.children || [])]; children.splice(Math.max(0, Math.min(index, children.length)), 0, block)
+      return blocks.map((candidate, candidateIndex) => candidateIndex === cursor ? { ...candidate, children } : candidate)
+    }
+    if (item.children?.length) {
+      const children = insertNoteBlock(item.children, block, parentId, index)
+      if (children) return blocks.map((candidate, candidateIndex) => candidateIndex === cursor ? { ...candidate, children } : candidate)
+    }
+  }
+  return null
+}
+
+export const moveNoteBlock = (blocks: NoteBlock[], blockId: string, targetParentId: string | null, targetIndex: number): NoteBlock[] => {
+  const source = findNoteBlockLocation(blocks, blockId)
+  if (!source || targetParentId === blockId) return blocks
+  if (targetParentId && findNoteBlockLocation(source.block.children || [], targetParentId)) return blocks
+  const removed = removeNoteBlock(blocks, blockId)
+  if (!removed.removed) return blocks
+  const adjustedIndex = source.parentId === targetParentId && source.index < targetIndex ? targetIndex - 1 : targetIndex
+  return insertNoteBlock(removed.blocks, removed.removed, targetParentId, adjustedIndex) || blocks
+}
+
 export const isTextBlock = (block: NoteBlock) => block.type !== 'divider'

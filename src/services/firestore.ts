@@ -1,16 +1,29 @@
-import { arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type DocumentReference, type Firestore, type Unsubscribe } from 'firebase/firestore'
+import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, runTransaction, serverTimestamp, setDoc, updateDoc, where, writeBatch, type DocumentReference, type Firestore, type Unsubscribe } from 'firebase/firestore'
 import type { ChatMessage, ItineraryPlace, NotePage, Profile, Proposal, TLogData, TransportSegment, Trip, TripMember } from '../types'
 
 const emptyData: TLogData = { trips: [], notes: [], places: [], segments: [], messages: [], proposals: [] }
 const asIso = (value: unknown) => value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function' ? value.toDate().toISOString() : typeof value === 'string' ? value : new Date().toISOString()
 
-export function subscribeToUserData(database: Firestore, userId: string, onData: (data: TLogData) => void, onError: (error: Error, context?: Record<string, unknown>) => void): Unsubscribe {
+export interface RealtimeActivity { type: 'message' | 'place'; tripId: string; tripName: string; actorId: string; body: string }
+
+export function subscribeToUserData(database: Firestore, userId: string, onData: (data: TLogData) => void, onError: (error: Error, context?: Record<string, unknown>) => void, onActivity?: (activity: RealtimeActivity) => void): Unsubscribe {
   let childUnsubscribers: Unsubscribe[] = []
   let trips: Trip[] = []; const members = new Map<string, TripMember[]>(); const notes = new Map<string, NotePage[]>(); const places = new Map<string, ItineraryPlace[]>(); const segments = new Map<string, TransportSegment[]>(); const messages = new Map<string, ChatMessage[]>(); const proposals = new Map<string, Proposal[]>()
   const emit = () => onData({ trips: trips.map((trip) => ({ ...trip, members: members.get(trip.id) || trip.members })), notes: Array.from(notes.values()).flat(), places: Array.from(places.values()).flat(), segments: Array.from(segments.values()).flat(), messages: Array.from(messages.values()).flat(), proposals: Array.from(proposals.values()).flat() })
   const listen = <T>(tripId: string, path: string, target: Map<string, T[]>, mapRow: (id: string, row: Record<string, unknown>) => T, sortField?: string) => {
     const base = collection(database, 'trips', tripId, path); const source = sortField ? query(base, orderBy(sortField)) : base
-    childUnsubscribers.push(onSnapshot(source, (snapshot) => { target.set(tripId, snapshot.docs.map((item) => mapRow(item.id, item.data()))); emit() }, (error) => onError(error, { tripId, collection: path })))
+    let initialized = false
+    childUnsubscribers.push(onSnapshot(source, (snapshot) => {
+      target.set(tripId, snapshot.docs.map((item) => mapRow(item.id, item.data())))
+      if (initialized && onActivity && (path === 'messages' || path === 'places')) {
+        snapshot.docChanges().filter((change) => change.type === 'added').forEach((change) => {
+          const row = change.doc.data(); const tripName = trips.find((trip) => trip.id === tripId)?.name || 'T Log'
+          if (path === 'messages') { const author = row.author as Profile | undefined; onActivity({ type: 'message', tripId, tripName, actorId: author?.id || '', body: String(row.body || '새 메시지가 도착했어요.') }) }
+          else onActivity({ type: 'place', tripId, tripName, actorId: String(row.createdBy || ''), body: String(row.name || '새 일정') })
+        })
+      }
+      initialized = true; emit()
+    }, (error) => onError(error, { tripId, collection: path })))
   }
   const tripQuery = query(collection(database, 'trips'), where('memberIds', 'array-contains', userId))
   const unsubscribeTrips = onSnapshot(tripQuery, { includeMetadataChanges: true }, (snapshot) => {
@@ -55,6 +68,12 @@ export async function joinTripByCode(database: Firestore, code: string, profile:
     members: [{ id: profile.id, profile, role: 'MEMBER' as const }], createdBy: String(row.ownerId),
     createdAt: asIso(row.createdAt), publicShareId: row.publicShareId ? String(row.publicShareId) : undefined
   }
+}
+export async function leaveTripDocument(database: Firestore, tripId: string, userId: string) {
+  const tripRef = doc(database, 'trips', tripId); const batch = writeBatch(database)
+  batch.update(tripRef, { memberIds: arrayRemove(userId), updatedAt: serverTimestamp() })
+  batch.delete(doc(tripRef, 'members', userId))
+  await batch.commit()
 }
 export const saveNoteDocument = (database: Firestore, page: NotePage, createdBy: string) => setDoc(doc(database, 'trips', page.tripId, 'notes', page.id), { title: page.title, blocks: page.blocks, createdBy, updatedAt: serverTimestamp() }, { merge: true })
 export async function ensureInitialNoteDocument(database: Firestore, tripId: string, profile: Profile): Promise<NotePage> {
