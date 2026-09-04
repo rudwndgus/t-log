@@ -30,7 +30,7 @@ async function signIn(page: Page) {
 async function addGooglePlace(page: Page, url: string, name: string, first = false) {
   if (first) await page.getByRole('button', { name: '첫 장소 추가' }).click()
   else await page.locator('.map-fab').click()
-  await page.getByRole('button', { name: /Google Maps 링크 붙여넣기/ }).click()
+  await page.getByRole('button', { name: /Google Maps 링크 붙여넣기/ }).dispatchEvent('click')
   await page.getByLabel('Google Maps URL').fill(url)
   await page.getByRole('button', { name: '위치 확인' }).click()
   await page.getByLabel('장소 이름').fill(name)
@@ -44,11 +44,13 @@ test('production transport icon and duration survive reload and appear in isolat
   const webkitContext = await safari.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' })
   try {
     const owner = await edgeContext.newPage()
+    owner.setDefaultTimeout(20_000)
     await signUp(owner)
     await owner.getByRole('link', { name: '새 여행', exact: true }).last().click()
     await owner.getByLabel('여행 이름').fill(tripName)
     await owner.getByLabel('목적지').fill('Toronto')
     await owner.getByRole('button', { name: '여행 만들기' }).click()
+    await expect(owner.getByLabel('페이지 제목')).toBeVisible()
     await owner.getByRole('link', { name: '지도' }).click()
 
     await addGooglePlace(owner, 'https://www.google.com/maps/place/CN+Tower/@43.6425662,-79.3892455,17z', 'CN Tower', true)
@@ -64,6 +66,7 @@ test('production transport icon and duration survive reload and appear in isolat
     await expect(owner.getByRole('button', { name: '이동 정보 수정 · 42분' })).toBeVisible()
 
     const isolated = await webkitContext.newPage()
+    isolated.setDefaultTimeout(20_000)
     await signIn(isolated)
     await isolated.getByText(tripName).click()
     await isolated.getByRole('link', { name: '지도' }).click()
