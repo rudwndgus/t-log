@@ -12,6 +12,7 @@ const NOTIFICATION_KEY = 'tlog:notifications:v1'
 const emptyData: TLogData = { trips: [], notes: [], places: [], segments: [], messages: [], proposals: [] }
 const fallbackProfile: Profile = { id: 'local-user', name: '여행자' }
 const noteSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const pendingNoteSaves = new Map<string, string>()
 
 interface CreateTripInput { name: string; destination: string; startDate: string; endDate: string; emoji: string }
 type NewPlaceInput = Omit<ItineraryPlace, 'id' | 'sortOrder' | 'createdBy' | 'createdAt'>
@@ -89,7 +90,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let unsubscribeData: (() => void) | undefined
     const unsubscribeAuth = onAuthStateChanged(firebaseAuth, (user) => {
       unsubscribeData?.(); unsubscribeData = undefined
-      noteSaveTimers.forEach((timer) => clearTimeout(timer)); noteSaveTimers.clear()
+      noteSaveTimers.forEach((timer) => clearTimeout(timer)); noteSaveTimers.clear(); pendingNoteSaves.clear()
       setCloudError(null); setData(emptyData)
       if (!user) { setSignedIn(false); setProfile(fallbackProfile); setReady(true); return }
       setReady(false)
@@ -98,7 +99,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // A newly-created Auth user emits once before updateProfile finishes.
       // signUp owns that first profile write so two concurrent setDoc calls cannot stall navigation.
       if (user.displayName) void saveProfile(database, nextProfile).catch((error) => reportCloudError('save-profile', error, { userId: user.uid }))
-      unsubscribeData = subscribeToUserData(database, user.uid, (nextData) => { setData(nextData); setReady(true) }, (error, context) => { reportCloudError('subscribe-user-data', error, { userId: user.uid, ...context }); setReady(true) }, notifyActivity)
+      unsubscribeData = subscribeToUserData(database, user.uid, (nextData) => {
+        setData((current) => {
+          if (!pendingNoteSaves.size) return nextData
+          const remoteIds = new Set(nextData.notes.map((page) => page.id))
+          const notes = nextData.notes.map((remotePage) => pendingNoteSaves.has(remotePage.id) ? current.notes.find((localPage) => localPage.id === remotePage.id) || remotePage : remotePage)
+          const pendingLocalNotes = current.notes.filter((page) => pendingNoteSaves.has(page.id) && !remoteIds.has(page.id))
+          return { ...nextData, notes: [...notes, ...pendingLocalNotes] }
+        })
+        setReady(true)
+      }, (error, context) => { reportCloudError('subscribe-user-data', error, { userId: user.uid, ...context }); setReady(true) }, notifyActivity)
     }, (error) => { reportCloudError('auth-state', error); setReady(true) })
     return () => { unsubscribeAuth(); unsubscribeData?.() }
   }, [notifyActivity, reportCloudError])
@@ -132,7 +142,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const page = data.notes.find((item) => item.id === pageId); const next = page ? { ...page, ...changes, updatedAt: new Date().toISOString() } : null
     mutate((current) => ({ ...current, notes: current.notes.map((item) => item.id === pageId ? { ...item, ...changes, updatedAt: next?.updatedAt || item.updatedAt } : item) }))
     const database = db
-    if (database && signedIn && page && next) { const original = page; const timer = noteSaveTimers.get(pageId); if (timer) clearTimeout(timer); noteSaveTimers.set(pageId, setTimeout(() => { void saveNoteDocument(database, next, profile.id).catch((error) => { mutate((current) => ({ ...current, notes: current.notes.map((item) => item.id === pageId && item.updatedAt === next.updatedAt ? original : item) })); reportCloudError('update-note', error, { tripId: original.tripId, userId: profile.id }) }) }, 800)) }
+    if (database && signedIn && page && next) {
+      const original = page; const revision = next.updatedAt; const timer = noteSaveTimers.get(pageId)
+      if (timer) clearTimeout(timer)
+      pendingNoteSaves.set(pageId, revision)
+      noteSaveTimers.set(pageId, setTimeout(() => {
+        noteSaveTimers.delete(pageId)
+        void saveNoteDocument(database, next, profile.id).catch((error) => {
+          mutate((current) => ({ ...current, notes: current.notes.map((item) => item.id === pageId && item.updatedAt === revision ? original : item) }))
+          reportCloudError('update-note', error, { tripId: original.tripId, userId: profile.id })
+        }).finally(() => { if (pendingNoteSaves.get(pageId) === revision) pendingNoteSaves.delete(pageId) })
+      }, 800))
+    }
   }
   const deleteNotePage = async (pageId: string) => { const page = data.notes.find((item) => item.id === pageId); if (!page) return; try { if (db && signedIn) { await deleteNoteDocument(db, page.tripId, pageId); const referencedElsewhere = new Set(data.notes.filter((item) => item.id !== pageId).flatMap((item) => collectAttachmentIds(item.blocks))); await Promise.all(collectAttachmentIds(page.blocks).filter((id) => !referencedElsewhere.has(id)).map((id) => deleteAttachment(db!, page.tripId, id))) } mutate((current) => ({ ...current, notes: current.notes.filter((item) => item.id !== pageId) })) } catch (error) { reportCloudError('delete-note', error, { tripId: page.tripId, userId: profile.id }); throw error } }
   const duplicateNotePage = async (pageId: string) => { const original = data.notes.find((page) => page.id === pageId); if (!original) return undefined; const copy: NotePage = { ...original, id: uid(), title: `${original.title} 복사본`, blocks: original.blocks.map((block) => ({ ...block, id: uid() })), updatedAt: new Date().toISOString() }; try { if (db && signedIn) await saveNoteDocument(db, copy, profile.id); mutate((current) => ({ ...current, notes: [...current.notes.filter((item) => item.id !== copy.id), copy] })); return copy } catch (error) { reportCloudError('duplicate-note', error, { tripId: copy.tripId, userId: profile.id }); throw error } }

@@ -35,6 +35,7 @@ test('keeps mobile note actions visible and continues after an attachment', asyn
 
   await rootBlocks.first().locator('.media-block-options').click()
   const dialog = page.getByRole('dialog', { name: '블록 옵션' })
+  await expect.poll(() => dialog.evaluate((element) => element.parentElement === document.body)).toBe(true)
   const deleteButton = dialog.getByRole('button', { name: '삭제' })
   await expect(deleteButton).toBeVisible()
   await page.waitForTimeout(300)
@@ -43,4 +44,8 @@ test('keeps mobile note actions visible and continues after an attachment', asyn
 
   await dialog.getByRole('button', { name: '아래로 이동' }).click()
   await expect(rootBlocks.nth(1).locator('.media-editable-block')).toBeVisible()
+
+  await page.getByRole('link', { name: '채팅' }).click()
+  await page.getByPlaceholder('메시지...').focus()
+  await expect(page.getByRole('navigation', { name: '여행 메뉴' })).toBeHidden()
 })
