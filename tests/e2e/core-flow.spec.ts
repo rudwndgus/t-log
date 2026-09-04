@@ -44,6 +44,17 @@ test('creates a trip and connects note, map, and chat flows', async ({ page }) =
   await expect(page.getByText('강변 산책 포인트')).toBeVisible()
   await expect(page.getByText('오전 11:00 ~ 오후 1:00')).toBeVisible()
 
+  await page.getByRole('button', { name: '이동 정보 추가' }).click()
+  await page.getByRole('button', { name: '비행기' }).click()
+  await page.getByLabel('소요 시간 · 분').fill('35')
+  await page.getByRole('button', { name: '저장' }).click()
+  const transport = page.getByRole('button', { name: '이동 정보 수정 · 35분' })
+  await expect(transport).toBeVisible()
+  await expect(transport.locator('.lucide-plane')).toBeVisible()
+  await page.waitForTimeout(300)
+  await page.reload()
+  await expect(page.getByRole('button', { name: '이동 정보 수정 · 35분' })).toBeVisible()
+
   await page.getByRole('link', { name: '채팅' }).click()
   await page.getByPlaceholder('메시지...').fill('여기서 만나자!')
   await page.getByRole('button', { name: '전송' }).click()

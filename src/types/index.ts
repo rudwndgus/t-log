@@ -1,7 +1,7 @@
 export type TripRole = 'OWNER' | 'MEMBER'
 export type ProposalStatus = 'OPEN' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
 export type MessageType = 'TEXT' | 'NOTE_SHARE' | 'PLACE_SHARE' | 'PROPOSAL' | 'POLL' | 'DECISION' | 'SYSTEM'
-export type TransportMode = 'walk' | 'driving' | 'transit' | 'cycling' | 'ferry' | 'shuttle' | 'other'
+export type TransportMode = 'walk' | 'driving' | 'cycling' | 'bus' | 'train' | 'plane' | 'transit' | 'ferry' | 'shuttle' | 'other'
 export type BlockType = 'paragraph' | 'heading1' | 'heading2' | 'heading3' | 'bullet' | 'numbered' | 'todo' | 'toggle' | 'quote' | 'divider' | 'link' | 'location' | 'image' | 'file' | 'embed'
 
 export interface Profile { id: string; name: string; email?: string }
