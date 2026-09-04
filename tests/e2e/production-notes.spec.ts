@@ -45,7 +45,14 @@ test('production attachment survives reload and previews in isolated WebKit', as
     await expect(owner.getByRole('option').first()).toContainText('토글')
     await rootInput.fill('/toggle')
     await owner.getByRole('option', { name: /토글/ }).click()
+    const ownerUrlBeforeToggle = owner.url()
+    let ownerReloaded = false
+    owner.once('domcontentloaded', () => { ownerReloaded = true })
     await owner.getByRole('button', { name: '토글 펼치기' }).click()
+    await owner.waitForTimeout(1_200)
+    expect(owner.url()).toBe(ownerUrlBeforeToggle)
+    expect(ownerReloaded).toBe(false)
+    await expect(owner.getByRole('button', { name: '토글 접기' })).toBeVisible()
 
     const nestedInput = owner.locator('.editor-blocks--nested').getByPlaceholder('내용 입력')
     await nestedInput.fill('/file')
@@ -70,13 +77,24 @@ test('production attachment survives reload and previews in isolated WebKit', as
     await actionDialog.getByRole('button', { name: '아래로 이동' }).click()
 
     await owner.reload({ waitUntil: 'domcontentloaded' })
+    await owner.getByRole('button', { name: '토글 펼치기' }).click()
     await expect(owner.getByText('firestore-preview.txt')).toBeVisible({ timeout: 30_000 })
 
     const isolated = await webkitContext.newPage()
     await signIn(isolated)
     await isolated.getByText(tripName).click()
     await isolated.locator('.page-row').first().click()
+    await isolated.getByRole('button', { name: '토글 펼치기' }).click()
     await expect(isolated.getByText('firestore-preview.txt')).toBeVisible({ timeout: 30_000 })
+    const isolatedUrlBeforeToggle = isolated.url()
+    let isolatedReloaded = false
+    isolated.once('domcontentloaded', () => { isolatedReloaded = true })
+    await isolated.getByRole('button', { name: '토글 접기' }).click()
+    await isolated.waitForTimeout(1_200)
+    expect(isolated.url()).toBe(isolatedUrlBeforeToggle)
+    expect(isolatedReloaded).toBe(false)
+    await expect(isolated.getByRole('button', { name: '토글 펼치기' })).toBeVisible()
+    await isolated.getByRole('button', { name: '토글 펼치기' }).click()
     await isolated.getByRole('button', { name: '미리보기' }).click()
     await expect(isolated.getByRole('dialog', { name: 'firestore-preview.txt 미리보기' })).toContainText('T Log Firestore preview proof')
   } finally {

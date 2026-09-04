@@ -130,6 +130,8 @@ function DropZone({ parentId, index, dragging, active }: { parentId: string | nu
 
 function SortableBlock({ block, index, number, level, blocks, commit, updateAt, removeAt, onAction, onRemoveBlock, renderMedia, activeId, setActiveId, slash, setSlash, registerInput, focusBlock, chooseCommand, dragging, dropTarget }: { block: NoteBlock; index: number; number?: number; level: number; blocks: NoteBlock[]; commit: (blocks: NoteBlock[]) => void; updateAt: (index: number, changes: Partial<NoteBlock>) => void; removeAt: (index: number) => void; onAction: (target: NoteActionTarget) => void; onRemoveBlock: (block: NoteBlock) => void; renderMedia: (block: NoteBlock) => ReactNode; activeId: string | null; setActiveId: Dispatch<SetStateAction<string | null>>; slash: SlashState | null; setSlash: (state: SlashState | null) => void; registerInput: (id: string, node: HTMLTextAreaElement | null) => void; focusBlock: (id: string, caret?: number) => void; chooseCommand: (command: NoteCommand, blocks: NoteBlock[], index: number, commit: (next: NoteBlock[]) => void) => void; dragging: boolean; dropTarget: DropTarget | null }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: block.id })
+  const [localCollapsed, setLocalCollapsed] = useState<boolean | null>(null)
+  const collapsed = localCollapsed ?? Boolean(block.collapsed)
   const style = { transform: CSS.Transform.toString(transform), transition }; const dragHandleProps = { ...attributes, ...listeners } as ButtonHTMLAttributes<HTMLButtonElement>
   const applyDivider = () => { const paragraph = createNoteBlock(uid()); commit([...blocks.slice(0, index), { ...block, type: 'divider' as BlockType, content: '' }, paragraph, ...blocks.slice(index + 1)]); setSlash(null); focusBlock(paragraph.id) }
   const handleChange = (value: string, textarea: HTMLTextAreaElement) => {
@@ -161,12 +163,14 @@ function SortableBlock({ block, index, number, level, blocks, commit, updateAt, 
     }
   }
   const toggle = () => {
-    const opening = Boolean(block.collapsed); const children = block.children?.length ? block.children : [createNoteBlock(uid())]
-    updateAt(index, { collapsed: !block.collapsed, children }); if (opening) focusBlock(children[0].id)
+    const opening = collapsed; const children = block.children?.length ? block.children : [createNoteBlock(uid())]
+    setLocalCollapsed(!collapsed)
+    if (!block.children?.length) updateAt(index, { children })
+    if (opening) focusBlock(children[0].id)
   }
   const moveTo = (nextIndex: number) => { if (nextIndex < 0 || nextIndex >= blocks.length || nextIndex === index) return; commit(arrayMove(blocks, index, nextIndex)) }
-  return <div ref={setNodeRef} className={`sortable-note-block ${isDragging ? 'is-dragging' : ''}`} style={style}><BlockEditor block={block} number={number} active={activeId === block.id} inputRef={(node) => registerInput(block.id, node)} handleRef={setActivatorNodeRef} dragHandleProps={dragHandleProps} customContent={renderMedia(block)} onFocus={() => setActiveId(block.id)} onBlur={() => setTimeout(() => setActiveId((current) => current === block.id ? null : current), 0)} onChange={handleChange} onKeyDown={handleKeyDown} onCheckedChange={(checked) => updateAt(index, { checked })} onToggle={toggle} onAction={() => onAction({ block, remove: () => removeAt(index), moveUp: () => moveTo(index - 1), moveDown: () => moveTo(index + 1), canMoveUp: index > 0, canMoveDown: index < blocks.length - 1 })} />
+  return <div ref={setNodeRef} className={`sortable-note-block ${isDragging ? 'is-dragging' : ''}`} style={style}><BlockEditor block={block.type === 'toggle' ? { ...block, collapsed } : block} number={number} active={activeId === block.id} inputRef={(node) => registerInput(block.id, node)} handleRef={setActivatorNodeRef} dragHandleProps={dragHandleProps} customContent={renderMedia(block)} onFocus={() => setActiveId(block.id)} onBlur={() => setTimeout(() => setActiveId((current) => current === block.id ? null : current), 0)} onChange={handleChange} onKeyDown={handleKeyDown} onCheckedChange={(checked) => updateAt(index, { checked })} onToggle={toggle} onAction={() => onAction({ block, remove: () => removeAt(index), moveUp: () => moveTo(index - 1), moveDown: () => moveTo(index + 1), canMoveUp: index > 0, canMoveDown: index < blocks.length - 1 })} />
     {slash?.blockId === block.id && <SlashCommandMenu query={slash.query} selected={slash.selected} onChoose={(command) => chooseCommand(command, blocks, index, commit)} onClose={() => setSlash(null)} />}
-    {block.type === 'toggle' && !block.collapsed && <EditorList blocks={block.children || []} parentId={block.id} level={level + 1} onBlocksChange={(children) => updateAt(index, { children })} onAction={onAction} onRemoveBlock={onRemoveBlock} renderMedia={renderMedia} activeId={activeId} setActiveId={setActiveId} slash={slash} setSlash={setSlash} registerInput={registerInput} focusBlock={focusBlock} chooseCommand={chooseCommand} dragging={dragging} dropTarget={dropTarget} />}
+    {block.type === 'toggle' && !collapsed && <EditorList blocks={block.children || []} parentId={block.id} level={level + 1} onBlocksChange={(children) => updateAt(index, { children })} onAction={onAction} onRemoveBlock={onRemoveBlock} renderMedia={renderMedia} activeId={activeId} setActiveId={setActiveId} slash={slash} setSlash={setSlash} registerInput={registerInput} focusBlock={focusBlock} chooseCommand={chooseCommand} dragging={dragging} dropTarget={dropTarget} />}
   </div>
 }
